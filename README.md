@@ -1,8 +1,8 @@
 ﻿# Downloader QBench Data
 
-Aplicación Python para descargar y mantener sincronizada la información de QBench en una base de datos PostgreSQL local. Actualmente cubre la descarga de **customers**, **orders** y **batches** con soporte para cargas completas e incrementales, incluyendo checkpoints y manejo de errores.
+Aplicacion Python para descargar y mantener sincronizada la informacion de QBench en una base de datos PostgreSQL local. Actualmente cubre la descarga de **customers**, **orders**, **samples** y **batches** con soporte para cargas completas e incrementales, incluyendo checkpoints y manejo de errores.
 
-## Tecnologías principales
+## Tecnologias principales
 - Python 3.12+
 - [httpx](https://www.python-httpx.org/) para consumo de la API QBench
 - [SQLAlchemy](https://www.sqlalchemy.org/) y PostgreSQL para persistencia
@@ -13,10 +13,10 @@ Aplicación Python para descargar y mantener sincronizada la información de QBe
 ## Requisitos previos
 1. Python 3.12 instalado y disponible en `PATH`.
 2. PostgreSQL accesible (local o remoto) con el rol/base configurados.
-3. Credenciales QBench válidas (ID, secret y endpoint de token).
+3. Credenciales QBench validas (ID, secret y endpoint de token).
 4. [git](https://git-scm.com/) si vas a clonar/colaborar.
 
-## Instalación y configuración
+## Instalacion y configuracion
 ```bash
 # Crear y activar entorno virtual (Windows PowerShell)
 python -m venv .venv
@@ -35,11 +35,15 @@ copy .env.example .env
 Downloader-Qbench-Data/
 ├── docs/
 │   └── roadmap.md            # Plan de trabajo y notas
-├── scripts/\n│   ├── run_sync_customers.py # Ejecuta la sincronización de clientes\n│   ├── run_sync_orders.py    # Ejecuta la sincronización de órdenes\n│   └── run_sync_batches.py   # Ejecuta la sincronización de batches
+├── scripts/
+│   ├── run_sync_customers.py # Ejecuta la sincronizacion de clientes
+│   ├── run_sync_orders.py    # Ejecuta la sincronizacion de ordenes
+│   ├── run_sync_samples.py   # Ejecuta la sincronizacion de muestras
+│   └── run_sync_batches.py   # Ejecuta la sincronizacion de batches
 ├── src/
 │   └── downloader_qbench_data/
 │       ├── clients/          # Cliente HTTP QBench
-│       ├── config.py         # Carga de configuración y .env
+│       ├── config.py         # Carga de configuracion y .env
 │       ├── ingestion/        # Pipelines de ingesta
 │       └── storage/          # Modelos y acceso a base de datos
 ├── tests/                    # Pruebas unitarias
@@ -48,23 +52,39 @@ Downloader-Qbench-Data/
 └── .env.example              # Plantilla de variables de entorno
 ```
 
-## Ejecución
-1. Asegúrate de tener la base y credenciales configuradas en `.env`.
-2. Activa el entorno virtual y ejecuta la sincronización deseada:
+## Ejecucion
+1. Asegurate de tener la base y credenciales configuradas en `.env`.
+2. Activa el entorno virtual y ejecuta la sincronizacion deseada:
    ```bash
    # Full refresh de clientes
    python scripts/run_sync_customers.py --full
 
-   # Sincronización incremental de clientes
+   # Sincronizacion incremental de clientes
    python scripts/run_sync_customers.py
 
-   # Full refresh de órdenes (requiere clientes precargados)\n   python scripts/run_sync_orders.py --full\n\n   # Full refresh de batches (requiere customers/orders cargados previamente)\n   python scripts/run_sync_batches.py --full
+   # Full refresh de ordenes (requiere clientes precargados)
+   python scripts/run_sync_orders.py --full
+
+   # Full refresh de samples (requiere ordenes cargadas previamente)
+   python scripts/run_sync_samples.py --full
+
+   # Full refresh de batches (requiere customers/orders cargados previamente)
+   python scripts/run_sync_batches.py --full
    ```
-   Ambas herramientas muestran una barra de progreso por página (`tqdm`).
+   Todos los scripts muestran una barra de progreso por pagina (`tqdm`).
 
-3. Verifica los registros en PostgreSQL (`customers`, `orders`, `sync_checkpoints`).
+3. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `sync_checkpoints`).
 
+## Proximos pasos
+- Completar pipelines para tests, assays y reports.
+- Construir UI PySide6 con boton "ACTUALIZAR" y estado de ultimo sync.
+- Exponer API REST con FastAPI para servir los datos a dashboards externos.
 
+## Contribucion
+1. Crea una rama: `git checkout -b feature/x`.
+2. Ejecuta pruebas (`pytest`).
+3. Abre PR describiendo cambios y resultados.
 
-
+## Licencia
+Proyecto interno; ajustar segun politicas de la empresa.
 

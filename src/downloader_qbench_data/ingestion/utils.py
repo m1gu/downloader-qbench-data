@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+import re
+from decimal import Decimal, InvalidOperation
 from typing import Iterable, Optional
 
 LOGGER = logging.getLogger(__name__)
@@ -67,3 +69,25 @@ def ensure_int_list(values: Optional[Iterable[int | str]]) -> list[int]:
         if converted is not None:
             result.append(converted)
     return result
+
+
+_NON_NUMERIC_CHARS = re.compile(r"[^0-9.\-]")
+
+
+def safe_decimal(value: Optional[str | int | float | Decimal]) -> Optional[Decimal]:
+    """Convert the provided value to Decimal when possible."""
+
+    if value in (None, ""):
+        return None
+    if isinstance(value, Decimal):
+        return value
+    try:
+        if isinstance(value, (int, float)):
+            return Decimal(str(value))
+        cleaned = _NON_NUMERIC_CHARS.sub("", str(value)).replace(",", ".")
+        if not cleaned:
+            return None
+        return Decimal(cleaned)
+    except (InvalidOperation, ValueError, TypeError):
+        LOGGER.warning("Could not cast value '%s' to Decimal", value)
+        return None

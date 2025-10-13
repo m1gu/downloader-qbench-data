@@ -90,12 +90,45 @@ class QBenchClient:
         response.raise_for_status()
         return response.json()
 
-    def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
-        response = self._client.request(method, url, **kwargs)
-        if response.status_code == httpx.codes.UNAUTHORIZED:
-            self._authenticate()
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        max_retries: int = 5,
+        backoff_factor: float = 2.0,
+        **kwargs,
+    ) -> httpx.Response:
+        """Send an HTTP request with retry logic for authentication and rate limiting."""
+
+        attempt = 0
+        delay = 1.0
+        while True:
             response = self._client.request(method, url, **kwargs)
-        return response
+            if response.status_code == httpx.codes.UNAUTHORIZED:
+                self._authenticate()
+                response = self._client.request(method, url, **kwargs)
+            if response.status_code != httpx.codes.TOO_MANY_REQUESTS:
+                return response
+
+            # Handle 429 Too Many Requests
+            attempt += 1
+            if attempt > max_retries:
+                LOGGER.error("Exceeded max retries for %s %s after rate limiting", method, url)
+                return response
+            retry_after = response.headers.get("Retry-After")
+            try:
+                sleep_seconds = float(retry_after) if retry_after else delay
+            except ValueError:
+                sleep_seconds = delay
+            LOGGER.warning(
+                "Rate limited by QBench (429). Sleeping for %.2f seconds before retrying (attempt %s/%s).",
+                sleep_seconds,
+                attempt,
+                max_retries,
+            )
+            time.sleep(sleep_seconds)
+            delay *= backoff_factor
 
     def list_customers(self, *, page_num: int = 1, page_size: int = 50) -> Dict[str, Any]:
         """Retrieve a paginated list of customers."""
@@ -149,6 +182,42 @@ class QBenchClient:
             params["include_raw_worsksheet_data"] = "true"
 
         response = self._request("GET", "/qbench/api/v1/batch", params=params)
+        response.raise_for_status()
+        return response.json()
+
+    def list_samples(
+        self,
+        *,
+        page_num: int = 1,
+        page_size: int = 50,
+        customer_ids: Optional[Iterable[int]] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Optional[str] = None,
+        order_id_contains: Optional[str] = None,
+        sample_id_contains: Optional[str] = None,
+        additional_fields_encoded: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Retrieve a paginated list of samples."""
+
+        params: list[tuple[str, Any]] = [
+            ("page_num", page_num),
+            ("page_size", page_size),
+        ]
+        if customer_ids:
+            for customer_id in customer_ids:
+                params.append(("customer_ids", customer_id))
+        if sort_by:
+            params.append(("sort_by", sort_by))
+        if sort_order:
+            params.append(("sort_order", sort_order))
+        if order_id_contains:
+            params.append(("order_id_contains", order_id_contains))
+        if sample_id_contains:
+            params.append(("sample_id_contains", sample_id_contains))
+        if additional_fields_encoded:
+            params.append(("additional_fields_encoded", additional_fields_encoded))
+
+        response = self._request("GET", "/qbench/api/v1/sample", params=params)
         response.raise_for_status()
         return response.json()
 
