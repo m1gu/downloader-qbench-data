@@ -1,4 +1,4 @@
-﻿"""Ingestion routines for QBench orders."""
+﻿"""Ingestion routines for QBench batches."""
 
 from __future__ import annotations
 
@@ -7,27 +7,25 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Iterable, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from downloader_qbench_data.clients.qbench import QBenchClient
 from downloader_qbench_data.config import AppSettings, get_settings
-from downloader_qbench_data.ingestion.utils import parse_qbench_datetime, safe_int
-from downloader_qbench_data.storage import Customer, Order, SyncCheckpoint, session_scope
+from downloader_qbench_data.ingestion.utils import ensure_int_list, parse_qbench_datetime
+from downloader_qbench_data.storage import Batch, SyncCheckpoint, session_scope
 
 LOGGER = logging.getLogger(__name__)
-ENTITY_NAME = "orders"
+ENTITY_NAME = "batches"
 API_MAX_PAGE_SIZE = 50
 
 
 @dataclass
-class OrderSyncSummary:
-    """Aggregated statistics for an order sync run."""
+class BatchSyncSummary:
+    """Aggregated statistics for a batch sync run."""
 
     processed: int = 0
-    skipped_missing_customer: int = 0
-    skipped_unknown_customer: int = 0
     skipped_old: int = 0
     pages_seen: int = 0
     last_synced_at: Optional[datetime] = None
@@ -35,14 +33,15 @@ class OrderSyncSummary:
     start_page: int = 1
 
 
-def sync_orders(
+def sync_batches(
     settings: Optional[AppSettings] = None,
     *,
     full_refresh: bool = False,
     page_size: Optional[int] = None,
+    include_raw_worksheet_data: bool = False,
     progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
-) -> OrderSyncSummary:
-    """Synchronise order data from QBench into PostgreSQL."""
+) -> BatchSyncSummary:
+    """Synchronise batch data from QBench into PostgreSQL."""
 
     settings = settings or get_settings()
     effective_page_size = min(page_size or settings.page_size, API_MAX_PAGE_SIZE)
@@ -57,12 +56,12 @@ def sync_orders(
         checkpoint.status = "running"
         checkpoint.failed = False
         checkpoint.message = None
-        known_customers = _load_customer_ids(session)
 
-    summary = OrderSyncSummary(last_synced_at=last_synced_at, start_page=start_page)
+    summary = BatchSyncSummary(last_synced_at=last_synced_at, start_page=start_page)
     baseline_synced_at = last_synced_at
     max_synced_at = last_synced_at
     current_page = start_page
+
     try:
         with QBenchClient(
             base_url=settings.qbench.base_url,
@@ -73,34 +72,20 @@ def sync_orders(
             total_pages: Optional[int] = None
             while True:
                 stop_after_page = False
-                payload = client.list_orders(
+                payload = client.list_batches(
                     page_num=current_page,
                     page_size=effective_page_size,
-                    sort_by="date_created",
-                    sort_order="desc",
+                    include_raw_worksheet_data=include_raw_worksheet_data,
                 )
                 total_pages = payload.get("total_pages") or total_pages
                 summary.total_pages = total_pages
-                orders = payload.get("data") or []
-                if not orders:
+                batches = payload.get("data") or []
+                if not batches:
                     break
 
                 summary.pages_seen += 1
                 records_to_upsert = []
-                for item in orders:
-                    customer_id = item.get("customer_account_id")
-                    if not customer_id:
-                        summary.skipped_missing_customer += 1
-                        continue
-                    if customer_id not in known_customers:
-                        summary.skipped_unknown_customer += 1
-                        LOGGER.warning(
-                            "Skipping order %s because customer %s does not exist locally",
-                            item.get("id"),
-                            customer_id,
-                        )
-                        continue
-
+                for item in batches:
                     created_at = parse_qbench_datetime(item.get("date_created"))
                     if (
                         not full_refresh
@@ -114,15 +99,13 @@ def sync_orders(
 
                     record = {
                         "id": item["id"],
-                        "custom_formatted_id": item.get("custom_formatted_id"),
-                        "customer_account_id": customer_id,
+                        "assay_id": item.get("assay_id"),
+                        "display_name": item.get("display_name"),
                         "date_created": created_at,
-                        "date_completed": parse_qbench_datetime(item.get("date_completed")),
-                        "date_order_reported": parse_qbench_datetime(item.get("date_order_reported")),
-                        "date_received": parse_qbench_datetime(item.get("date_received")),
-                        "sample_count": safe_int(item.get("sample_count")),
-                        "test_count": safe_int(item.get("test_count")),
-                        "state": item.get("state"),
+                        "date_prepared": parse_qbench_datetime(item.get("date_prepared")),
+                        "last_updated": parse_qbench_datetime(item.get("last_updated")),
+                        "sample_ids": ensure_int_list(item.get("sample_ids")),
+                        "test_ids": ensure_int_list(item.get("test_ids")),
                         "raw_payload": item,
                     }
                     records_to_upsert.append(record)
@@ -141,7 +124,7 @@ def sync_orders(
                 current_page += 1
 
     except Exception as exc:
-        LOGGER.exception("Order sync failed on page %s", current_page)
+        LOGGER.exception("Batch sync failed on page %s", current_page)
         _mark_checkpoint_failed(current_page, settings, error=exc)
         raise
 
@@ -156,7 +139,7 @@ def _persist_batch(
     max_synced_at: Optional[datetime],
     settings: AppSettings,
 ) -> None:
-    """Persist a batch of orders and update checkpoint progress."""
+    """Persist a batch of batches and update checkpoint progress."""
 
     with session_scope(settings) as session:
         checkpoint = _get_or_create_checkpoint(session)
@@ -166,21 +149,19 @@ def _persist_batch(
         checkpoint.message = None
 
         if rows:
-            insert_stmt = insert(Order).values(list(rows))
+            insert_stmt = insert(Batch).values(list(rows))
             update_stmt = {
-                "custom_formatted_id": insert_stmt.excluded.custom_formatted_id,
-                "customer_account_id": insert_stmt.excluded.customer_account_id,
+                "assay_id": insert_stmt.excluded.assay_id,
+                "display_name": insert_stmt.excluded.display_name,
                 "date_created": insert_stmt.excluded.date_created,
-                "date_completed": insert_stmt.excluded.date_completed,
-                "date_order_reported": insert_stmt.excluded.date_order_reported,
-                "date_received": insert_stmt.excluded.date_received,
-                "sample_count": insert_stmt.excluded.sample_count,
-                "test_count": insert_stmt.excluded.test_count,
-                "state": insert_stmt.excluded.state,
+                "date_prepared": insert_stmt.excluded.date_prepared,
+                "last_updated": insert_stmt.excluded.last_updated,
+                "sample_ids": insert_stmt.excluded.sample_ids,
+                "test_ids": insert_stmt.excluded.test_ids,
                 "raw_payload": insert_stmt.excluded.raw_payload,
                 "fetched_at": func.now(),
             }
-            session.execute(insert_stmt.on_conflict_do_update(index_elements=[Order.id], set_=update_stmt))
+            session.execute(insert_stmt.on_conflict_do_update(index_elements=[Batch.id], set_=update_stmt))
             checkpoint.last_synced_at = max_synced_at
 
 
@@ -216,12 +197,3 @@ def _get_or_create_checkpoint(session: Session) -> SyncCheckpoint:
         session.add(checkpoint)
         session.flush()
     return checkpoint
-
-
-def _load_customer_ids(session: Session) -> set[int]:
-    """Load all customer IDs present in the local database."""
-
-    result = session.execute(select(Customer.id))
-    return {row[0] for row in result}
-
-

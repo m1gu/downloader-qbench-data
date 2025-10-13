@@ -132,6 +132,26 @@ class QBenchClient:
         response.raise_for_status()
         return response.json()
 
+    def list_batches(
+        self,
+        *,
+        page_num: int = 1,
+        page_size: int = 50,
+        include_raw_worksheet_data: bool = False,
+    ) -> Dict[str, Any]:
+        """Retrieve a paginated list of batches."""
+
+        params: dict[str, Any] = {
+            "page_num": page_num,
+            "page_size": page_size,
+        }
+        if include_raw_worksheet_data:
+            params["include_raw_worsksheet_data"] = "true"
+
+        response = self._request("GET", "/qbench/api/v1/batch", params=params)
+        response.raise_for_status()
+        return response.json()
+
     def _authenticate(self) -> None:
         """Obtain an access token using the JWT bearer grant flow."""
 

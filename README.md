@@ -1,6 +1,6 @@
 ﻿# Downloader QBench Data
 
-Aplicación Python para descargar y mantener sincronizada la información de QBench en una base de datos PostgreSQL local. Actualmente cubre la descarga de **customers** y **orders** con soporte para cargas completas e incrementales, incluyendo checkpoints y manejo de errores.
+Aplicación Python para descargar y mantener sincronizada la información de QBench en una base de datos PostgreSQL local. Actualmente cubre la descarga de **customers**, **orders** y **batches** con soporte para cargas completas e incrementales, incluyendo checkpoints y manejo de errores.
 
 ## Tecnologías principales
 - Python 3.12+
@@ -35,9 +35,7 @@ copy .env.example .env
 Downloader-Qbench-Data/
 ├── docs/
 │   └── roadmap.md            # Plan de trabajo y notas
-├── scripts/
-│   ├── run_sync_customers.py # Ejecuta la sincronización de clientes
-│   └── run_sync_orders.py    # Ejecuta la sincronización de órdenes
+├── scripts/\n│   ├── run_sync_customers.py # Ejecuta la sincronización de clientes\n│   ├── run_sync_orders.py    # Ejecuta la sincronización de órdenes\n│   └── run_sync_batches.py   # Ejecuta la sincronización de batches
 ├── src/
 │   └── downloader_qbench_data/
 │       ├── clients/          # Cliente HTTP QBench
@@ -60,11 +58,13 @@ Downloader-Qbench-Data/
    # Sincronización incremental de clientes
    python scripts/run_sync_customers.py
 
-   # Full refresh de órdenes (requiere clientes precargados)
-   python scripts/run_sync_orders.py --full
+   # Full refresh de órdenes (requiere clientes precargados)\n   python scripts/run_sync_orders.py --full\n\n   # Full refresh de batches (requiere customers/orders cargados previamente)\n   python scripts/run_sync_batches.py --full
    ```
    Ambas herramientas muestran una barra de progreso por página (`tqdm`).
 
 3. Verifica los registros en PostgreSQL (`customers`, `orders`, `sync_checkpoints`).
+
+
+
 
 

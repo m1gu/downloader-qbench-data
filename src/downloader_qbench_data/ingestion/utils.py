@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Iterable, Optional
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,3 +43,27 @@ def parse_qbench_datetime(value: Optional[str]) -> Optional[datetime]:
     LOGGER.warning("Unknown QBench datetime format: %s", value)
     return None
 
+
+def safe_int(value: Optional[int | str]) -> Optional[int]:
+    """Convert a value to ``int`` when possible."""
+
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        LOGGER.warning("Could not cast value '%s' to int", value)
+        return None
+
+
+def ensure_int_list(values: Optional[Iterable[int | str]]) -> list[int]:
+    """Return a list of integers from an iterable, skipping invalid entries."""
+
+    if not values:
+        return []
+    result: list[int] = []
+    for value in values:
+        converted = safe_int(value)
+        if converted is not None:
+            result.append(converted)
+    return result
