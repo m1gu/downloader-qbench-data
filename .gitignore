@@ -84,3 +84,5 @@ logs/
 # Database dumps
 *.sql
 *.sqlite
+
+*.json
