@@ -1,4 +1,4 @@
-﻿# Proyecto Downloader QBench Data
+# Proyecto Downloader QBench Data
 
 ## 1. Objetivo General
 - Ingestar y respaldar toda la informacion disponible de QBench para una unica empresa en una base de datos PostgreSQL local.
@@ -99,8 +99,8 @@
 - Crear pruebas de integracion usando base de datos temporal.
 
 ### Fase 4 - UI PySide6 (Semana 3)
-- Diseñar ventana principal con boton, indicador de ultima sincronizacion y area de mensajes.
-- Integrar pipelines mediante señales y worker thread.
+- Dise�ar ventana principal con boton, indicador de ultima sincronizacion y area de mensajes.
+- Integrar pipelines mediante se�ales y worker thread.
 - Manejar estados (en progreso, exito, fallo) y bloquear boton mientras corre la sincronizacion.
 
 ### Fase 5 - API FastAPI (Semana 4)
@@ -116,7 +116,7 @@
 ## 7. Pruebas y Calidad
 - Unitarias: cliente API, transformaciones, manejo de errores.
 - Integracion: pipelines completos contra PostgreSQL de prueba (docker compose).
-- UI: pruebas manuales guiadas y, si da tiempo, pruebas automáticas con Qt Test.
+- UI: pruebas manuales guiadas y, si da tiempo, pruebas autom�ticas con Qt Test.
 - API: pytest + httpx AsyncClient para validar respuestas y filtros.
 
 ## 8. Operacion y Seguridad
@@ -149,4 +149,5 @@
 - Pipeline `sync_batches` implementado con arrays de IDs, checkpoint dedicado y script CLI (`scripts/run_sync_batches.py`) con opcion para incluir worksheet bruto.
 - Pipeline `sync_samples` implementado con validacion de `order_id`, conversion de batches y almacenamiento de metadata de tests.
 - Pipeline `sync_tests` implementado con validacion de `sample_id`, worksheet raw y enriquecimiento opcional por test individual.
-- Orquestador secuencial (`ingestion/pipeline.py`) que ejecuta customers → orders → samples → batches → tests reutilizando checkpoints y expuesto via `scripts/run_sync_all.py`.
+- Orquestador secuencial (`ingestion/pipeline.py`) que ejecuta customers -> orders -> samples -> batches -> tests reutilizando checkpoints y expuesto via `scripts/run_sync_all.py`.
+- API FastAPI inicial (`src/downloader_qbench_data/api`) con endpoints de metricas/entidades, script `scripts/run_api.py` y pruebas usando `fastapi.testclient`.

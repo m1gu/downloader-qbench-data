@@ -1,4 +1,4 @@
-﻿# Downloader QBench Data
+# Downloader QBench Data
 
 Aplicacion Python para descargar y mantener sincronizada la informacion de QBench en una base de datos PostgreSQL local. Actualmente cubre la descarga de **customers**, **orders**, **samples**, **tests** y **batches** con soporte para cargas completas e incrementales, incluyendo checkpoints y manejo de errores.
 
@@ -40,7 +40,9 @@ Downloader-Qbench-Data/
 |   |-- run_sync_orders.py    # Ejecuta la sincronizacion de ordenes
 |   |-- run_sync_samples.py   # Ejecuta la sincronizacion de muestras
 |   |-- run_sync_batches.py   # Ejecuta la sincronizacion de batches
-|   `-- run_sync_tests.py     # Ejecuta la sincronizacion de tests
+|   |-- run_sync_all.py      # Orquesta todas las entidades
+|   |-- run_api.py           # Levanta la API REST
+|   `-- run_sync_tests.py    # Ejecuta la sincronizacion de tests
 |-- src/
 |   `-- downloader_qbench_data/
 |       |-- clients/          # Cliente HTTP QBench
@@ -73,7 +75,12 @@ Downloader-Qbench-Data/
    ```
    Si se especifican entidades individuales, la sincronizacion respeta el orden y detiene la
    ejecucion ante el primer fallo para evitar inconsistencias.
-4. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
+4. Levanta la API REST si necesitas exponer los datos sincronizados:
+   ```bash
+   python scripts/run_api.py --host 0.0.0.0 --port 8000
+   ```
+   Esto publica la documentacion interactiva en `http://localhost:8000/api/docs` y los endpoints REST descritos abajo.
+5. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
 
 ### Sincronizacion de tests
 - El pipeline usa el script `scripts/run_sync_tests.py` y crea/actualiza el checkpoint `sync_checkpoints.entity = 'tests'`.
@@ -84,18 +91,12 @@ Downloader-Qbench-Data/
   - `--full`: fuerza un refresh completo, ignorando el checkpoint previo.
   - `--page-size`: sobrescribe el `page_size` configurado (maximo 50 por restricciones de la API).
 - El script muestra progreso por pagina con `tqdm` y al finalizar imprime un resumen con totales procesados, omisiones y la ultima fecha sincronizada.
-
-## Proximos pasos
-- Completar pipelines para tests, assays y reports.
-- Construir UI PySide6 con boton "ACTUALIZAR" y estado de ultimo sync.
-- Exponer API REST con FastAPI para servir los datos a dashboards externos.
-
-## Contribucion
-1. Crea una rama: `git checkout -b feature/x`.
-2. Ejecuta pruebas (`pytest`).
-3. Abre PR describiendo cambios y resultados.
-
-## Licencia
-Proyecto interno; ajustar segun politicas de la empresa.
-
-
+### API REST
+- `GET /api/health`: verificacion rapida del servicio.
+- `GET /api/v1/metrics/samples/overview`: totales y distribuciones por estado/matrix filtrables por fecha, cliente y orden.
+- `GET /api/v1/metrics/tests/overview`: conteos por estado y label de los tests con filtros opcionales por batch.
+- `GET /api/v1/metrics/tests/tat`: estadisticas de TAT (promedio, mediana, p95, distribucion y serie opcional por dia/semana).
+- `GET /api/v1/metrics/tests/tat-breakdown`: detalle de TAT agrupado por `label_abbr`.
+- `GET /api/v1/metrics/common/filters`: catalogos basicos (clientes, estados) para poblar dashboards.
+- `GET /api/v1/entities/samples/{sample_id}`: detalle de una muestra con orden/batches relacionados.
+- `GET /api/v1/entities/tests/{test_id}`: detalle de un test con sample/batches.
