@@ -73,15 +73,18 @@ Downloader-Qbench-Data/
    python scripts/run_sync_all.py                 # incremental de todas las entidades
    python scripts/run_sync_all.py --entity orders --entity samples
    ```
-   Si se especifican entidades individuales, la sincronizacion respeta el orden y detiene la
-   ejecucion ante el primer fallo para evitar inconsistencias.
+   Si se especifican entidades individuales, la sincronizacion respeta el orden y detiene la ejecucion ante el primer fallo para evitar inconsistencias.
 4. Levanta la API REST si necesitas exponer los datos sincronizados:
    ```bash
    python scripts/run_api.py --host 0.0.0.0 --port 8000
    ```
    Esto publica la documentacion interactiva en `http://localhost:8000/api/docs` y los endpoints REST descritos abajo.
-5. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
-
+5. Lanza el dashboard PySide6 (carga por defecto los ultimos 7 dias):
+   ```bash
+   python scripts/run_dashboard.py
+   ```
+   Puedes ajustar el backend usando la variable `DASHBOARD_API_BASE_URL` si el servicio corre en otro host.
+6. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
 ### Sincronizacion de tests
 - El pipeline usa el script `scripts/run_sync_tests.py` y crea/actualiza el checkpoint `sync_checkpoints.entity = 'tests'`.
 - Solo se persistiran tests cuyo `sample_id` exista localmente; si falta se registra en el resumen y se omite.

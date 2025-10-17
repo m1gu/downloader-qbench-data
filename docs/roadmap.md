@@ -151,3 +151,4 @@
 - Pipeline `sync_tests` implementado con validacion de `sample_id`, worksheet raw y enriquecimiento opcional por test individual.
 - Orquestador secuencial (`ingestion/pipeline.py`) que ejecuta customers -> orders -> samples -> batches -> tests reutilizando checkpoints y expuesto via `scripts/run_sync_all.py`.
 - API FastAPI inicial (`src/downloader_qbench_data/api`) con endpoints de metricas/entidades, script `scripts/run_api.py` y pruebas usando `fastapi.testclient`.
+- Dashboard PySide6 inicial (QtCharts, cards y scroll) que consume la API de metricas recientemente agregada.
