@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from statistics import mean, median
-from typing import DefaultDict, Iterable, Optional
+from typing import DefaultDict, Iterable, Optional, List
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from downloader_qbench_data.storage import Customer, Order, Sample, Test
 from ..schemas.metrics import (
+    DailyActivityPoint,
+    DailyActivityResponse,
+    DailyTATPoint,
     MetricsFiltersResponse,
+    MetricsSummaryKPI,
+    MetricsSummaryResponse,
+    NewCustomerItem,
+    NewCustomersResponse,
+    ReportsOverviewResponse,
     SamplesDistributionItem,
     SamplesOverviewKPI,
     SamplesOverviewResponse,
@@ -21,10 +29,13 @@ from ..schemas.metrics import (
     TestsOverviewResponse,
     TestsTATBreakdownItem,
     TestsTATBreakdownResponse,
+    TestsTATDailyResponse,
     TestsTATDistributionBucket,
     TestsTATMetrics,
     TestsTATResponse,
     TimeSeriesPoint,
+    TopCustomerItem,
+    TopCustomersResponse,
 )
 
 
@@ -445,6 +456,401 @@ def get_tests_tat_breakdown(
         for label, values in sorted(grouped.items(), key=lambda item: len(item[1]), reverse=True)
     ]
     return TestsTATBreakdownResponse(breakdown=breakdown)
+
+
+def get_metrics_summary(
+    session: Session,
+    *,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    customer_id: Optional[int] = None,
+    order_id: Optional[int] = None,
+    state: Optional[str] = None,
+    sla_hours: float = 48.0,
+) -> MetricsSummaryResponse:
+    sample_conditions, join_order = _apply_sample_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+    )
+    total_samples = _count_with_filters(
+        session,
+        Sample,
+        conditions=sample_conditions,
+        join_order=join_order,
+    )
+
+    test_conditions, join_sample, join_order_tests = _apply_test_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+        batch_id=None,
+    )
+    total_tests = _count_with_filters(
+        session,
+        Test,
+        conditions=test_conditions,
+        join_sample=join_sample,
+        join_order=join_order_tests,
+    )
+
+    customer_conditions = _daterange_conditions(Customer.date_created, date_from, date_to)
+    if customer_id is not None:
+        customer_conditions.append(Customer.id == customer_id)
+    total_customers = session.execute(
+        select(func.count()).select_from(Customer).where(*customer_conditions)
+    ).scalar_one()
+
+    report_conditions = list(test_conditions)
+    report_conditions.append(Test.report_completed_date.is_not(None))
+    report_conditions.extend(_daterange_conditions(Test.report_completed_date, date_from, date_to))
+    total_reports = _count_with_filters(
+        session,
+        Test,
+        conditions=report_conditions,
+        join_sample=join_sample,
+        join_order=join_order_tests,
+    )
+
+    tat_summary = get_tests_tat(
+        session,
+        date_created_from=date_from,
+        date_created_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+    )
+    average_tat = tat_summary.metrics.average_hours
+
+    last_updated_at = session.execute(select(func.max(Test.fetched_at))).scalar_one_or_none()
+
+    return MetricsSummaryResponse(
+        kpis=MetricsSummaryKPI(
+            total_samples=total_samples,
+            total_tests=total_tests,
+            total_customers=total_customers,
+            total_reports=total_reports,
+            average_tat_hours=average_tat,
+        ),
+        last_updated_at=last_updated_at,
+        range_start=date_from,
+        range_end=date_to,
+    )
+
+
+def get_daily_activity(
+    session: Session,
+    *,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    customer_id: Optional[int] = None,
+    order_id: Optional[int] = None,
+    compare_previous: bool = False,
+) -> DailyActivityResponse:
+    sample_conditions, join_order = _apply_sample_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=None,
+    )
+    test_conditions, join_sample, join_order_tests = _apply_test_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=None,
+        batch_id=None,
+    )
+
+    current_sample_counts = _fetch_daily_counts(
+        session,
+        Sample,
+        Sample.date_created,
+        sample_conditions,
+        join_order=join_order,
+    )
+    current_test_counts = _fetch_daily_counts(
+        session,
+        Test,
+        Test.date_created,
+        test_conditions,
+        join_order=join_order_tests,
+        join_sample=join_sample,
+    )
+    current_points = _combine_daily_counts(current_sample_counts, current_test_counts)
+
+    previous_points: Optional[list[DailyActivityPoint]] = None
+    if compare_previous and date_from and date_to:
+        previous_start, previous_end = _calculate_previous_period(date_from, date_to)
+        prev_sample_conditions, prev_join_order = _apply_sample_filters(
+            date_from=previous_start,
+            date_to=previous_end,
+            customer_id=customer_id,
+            order_id=order_id,
+            state=None,
+        )
+        prev_test_conditions, prev_join_sample, prev_join_order_tests = _apply_test_filters(
+            date_from=previous_start,
+            date_to=previous_end,
+            customer_id=customer_id,
+            order_id=order_id,
+            state=None,
+            batch_id=None,
+        )
+        prev_sample_counts = _fetch_daily_counts(
+            session,
+            Sample,
+            Sample.date_created,
+            prev_sample_conditions,
+            join_order=prev_join_order,
+        )
+        prev_test_counts = _fetch_daily_counts(
+            session,
+            Test,
+            Test.date_created,
+            prev_test_conditions,
+            join_order=prev_join_order_tests,
+            join_sample=prev_join_sample,
+        )
+        previous_points = _combine_daily_counts(prev_sample_counts, prev_test_counts)
+
+    return DailyActivityResponse(current=current_points, previous=previous_points)
+
+
+def get_new_customers(
+    session: Session,
+    *,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    limit: int = 10,
+) -> NewCustomersResponse:
+    conditions = _daterange_conditions(Customer.date_created, date_from, date_to)
+    stmt = (
+        select(Customer.id, Customer.name, Customer.date_created)
+        .where(*conditions)
+        .order_by(Customer.date_created.desc())
+        .limit(limit)
+    )
+    customers = [
+        NewCustomerItem(id=cid, name=name, created_at=created_at)
+        for cid, name, created_at in session.execute(stmt)
+        if created_at is not None
+    ]
+    return NewCustomersResponse(customers=customers)
+
+
+def get_top_customers_by_tests(
+    session: Session,
+    *,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    limit: int = 10,
+) -> TopCustomersResponse:
+    conditions, join_sample, join_order = _apply_test_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=None,
+        order_id=None,
+        state=None,
+        batch_id=None,
+    )
+    stmt = (
+        select(Customer.id, Customer.name, func.count(Test.id))
+        .select_from(Test)
+        .join(Sample, Sample.id == Test.sample_id)
+        .join(Order, Sample.order_id == Order.id)
+        .join(Customer, Customer.id == Order.customer_account_id)
+        .where(*conditions)
+        .group_by(Customer.id, Customer.name)
+        .order_by(func.count(Test.id).desc())
+        .limit(limit)
+    )
+    customers = [
+        TopCustomerItem(id=cid, name=name, tests=count)
+        for cid, name, count in session.execute(stmt)
+    ]
+    return TopCustomersResponse(customers=customers)
+
+
+def get_reports_overview(
+    session: Session,
+    *,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    customer_id: Optional[int] = None,
+    order_id: Optional[int] = None,
+    state: Optional[str] = None,
+    sla_hours: float = 48.0,
+) -> ReportsOverviewResponse:
+    conditions, join_sample, join_order = _apply_test_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+        batch_id=None,
+    )
+    conditions.append(Test.report_completed_date.is_not(None))
+    conditions.extend(_daterange_conditions(Test.report_completed_date, date_from, date_to))
+
+    tat_expr = func.extract("epoch", Test.report_completed_date - Test.date_created) / 3600.0
+    within_case = case((tat_expr <= sla_hours, 1), else_=0)
+    beyond_case = case((tat_expr > sla_hours, 1), else_=0)
+
+    stmt = select(
+        func.count(),
+        func.sum(within_case),
+        func.sum(beyond_case),
+    ).select_from(Test)
+    if join_sample:
+        stmt = stmt.join(Sample, Sample.id == Test.sample_id)
+    if join_order:
+        stmt = stmt.join(Order, Sample.order_id == Order.id)
+    stmt = stmt.where(*conditions)
+
+    total_reports, within_sla, beyond_sla = session.execute(stmt).one()
+    return ReportsOverviewResponse(
+        total_reports=int(total_reports or 0),
+        reports_within_sla=int(within_sla or 0),
+        reports_beyond_sla=int(beyond_sla or 0),
+    )
+
+
+def get_tests_tat_daily(
+    session: Session,
+    *,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    customer_id: Optional[int] = None,
+    order_id: Optional[int] = None,
+    state: Optional[str] = None,
+    sla_hours: float = 48.0,
+    moving_average_window: int = 7,
+) -> TestsTATDailyResponse:
+    conditions, join_sample, join_order = _apply_test_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+        batch_id=None,
+    )
+    conditions.append(Test.report_completed_date.is_not(None))
+    conditions.extend(_daterange_conditions(Test.report_completed_date, date_from, date_to))
+
+    tat_expr = func.extract("epoch", Test.report_completed_date - Test.date_created) / 3600.0
+    within_case = case((tat_expr <= sla_hours, 1), else_=0)
+    beyond_case = case((tat_expr > sla_hours, 1), else_=0)
+    period = func.date_trunc("day", Test.report_completed_date).label("period")
+
+    stmt = (
+        select(
+            period,
+            func.avg(tat_expr),
+            func.sum(within_case),
+            func.sum(beyond_case),
+        )
+        .select_from(Test)
+    )
+    if join_sample:
+        stmt = stmt.join(Sample, Sample.id == Test.sample_id)
+    if join_order:
+        stmt = stmt.join(Order, Sample.order_id == Order.id)
+    stmt = stmt.where(*conditions).group_by(period).order_by(period)
+
+    points: list[DailyTATPoint] = []
+    averages: list[TimeSeriesPoint] = []
+    for day, avg_hours, within_sla_value, beyond_sla_value in session.execute(stmt):
+        point_date = day.date()
+        avg_value = float(avg_hours) if avg_hours is not None else None
+        points.append(
+            DailyTATPoint(
+                date=point_date,
+                average_hours=avg_value,
+                within_sla=int(within_sla_value or 0),
+                beyond_sla=int(beyond_sla_value or 0),
+            )
+        )
+
+    if moving_average_window and moving_average_window > 1 and points:
+        averages = _calculate_moving_average(points, moving_average_window)
+
+    return TestsTATDailyResponse(points=points, moving_average_hours=averages or None)
+
+
+def _fetch_daily_counts(
+    session: Session,
+    model,
+    column,
+    conditions: list,
+    *,
+    join_order: bool = False,
+    join_sample: bool = False,
+) -> dict[date, int]:
+    period = func.date_trunc("day", column)
+    stmt = select(period.label("period"), func.count()).select_from(model)
+    if model is Sample and join_order:
+        stmt = stmt.join(Order, Sample.order_id == Order.id)
+    elif model is Test:
+        if join_sample:
+            stmt = stmt.join(Sample, Sample.id == Test.sample_id)
+        if join_order:
+            stmt = stmt.join(Order, Sample.order_id == Order.id)
+    stmt = stmt.where(*conditions).group_by(period).order_by(period)
+
+    counts: dict[date, int] = {}
+    for row in session.execute(stmt):
+        if row.period is None:
+            continue
+        counts[row.period.date()] = int(row[1] or 0)
+    return counts
+
+
+def _combine_daily_counts(
+    samples: dict[date, int],
+    tests: dict[date, int],
+) -> list[DailyActivityPoint]:
+    all_dates = sorted(set(samples.keys()) | set(tests.keys()))
+    return [
+        DailyActivityPoint(
+            date=point_date,
+            samples=samples.get(point_date, 0),
+            tests=tests.get(point_date, 0),
+        )
+        for point_date in all_dates
+    ]
+
+
+def _calculate_previous_period(date_from: datetime, date_to: datetime) -> tuple[datetime, datetime]:
+    span_days = (date_to.date() - date_from.date()).days + 1
+    prev_end = date_from - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=span_days - 1)
+    return prev_start, prev_end
+
+
+def _calculate_moving_average(points: list[DailyTATPoint], window: int) -> list[TimeSeriesPoint]:
+    averages: list[TimeSeriesPoint] = []
+    values: list[float] = []
+    dates: list[date] = []
+    for point in points:
+        if point.average_hours is None:
+            continue
+        values.append(point.average_hours)
+        dates.append(point.date)
+        if len(values) >= window:
+            window_values = values[-window:]
+            averages.append(
+                TimeSeriesPoint(
+                    period_start=dates[-1],
+                    value=sum(window_values) / len(window_values),
+                )
+            )
+    return averages
 
 
 def _compute_p95(values: list[float]) -> float | None:

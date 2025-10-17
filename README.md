@@ -88,15 +88,21 @@ Downloader-Qbench-Data/
 - Durante la sincronizacion incremental se detiene automaticamente al encontrar registros ya sincronizados (`date_created` <= ultimo checkpoint).
 - Cuando QBench no entrega metadatos clave (label, titulo, worksheet, bandera de reporte) el proceso realiza un `fetch_test` individual y guarda el contenido bruto en `tests.worksheet_raw`.
 - Argumentos disponibles:
-  - `--full`: fuerza un refresh completo, ignorando el checkpoint previo.
-  - `--page-size`: sobrescribe el `page_size` configurado (maximo 50 por restricciones de la API).
+  - `--full``: fuerza un refresh completo, ignorando el checkpoint previo.
+  - `--page-size``: sobrescribe el `page_size` configurado (maximo 50 por restricciones de la API).
 - El script muestra progreso por pagina con `tqdm` y al finalizar imprime un resumen con totales procesados, omisiones y la ultima fecha sincronizada.
 ### API REST
 - `GET /api/health`: verificacion rapida del servicio.
+- `GET /api/v1/metrics/summary`: KPIs globales (samples, tests, customers, reports) y TAT promedio.
+- `GET /api/v1/metrics/activity/daily`: serie diaria de samples/tests (con comparativo opcional del periodo previo).
 - `GET /api/v1/metrics/samples/overview`: totales y distribuciones por estado/matrix filtrables por fecha, cliente y orden.
 - `GET /api/v1/metrics/tests/overview`: conteos por estado y label de los tests con filtros opcionales por batch.
+- `GET /api/v1/metrics/customers/new`: listado de clientes creados en el rango.
+- `GET /api/v1/metrics/customers/top-tests`: top N clientes por tests en el rango.
 - `GET /api/v1/metrics/tests/tat`: estadisticas de TAT (promedio, mediana, p95, distribucion y serie opcional por dia/semana).
-- `GET /api/v1/metrics/tests/tat-breakdown`: detalle de TAT agrupado por `label_abbr`.
+- `GET /api/v1/metrics/tests/tat-breakdown`: detalle de TAT agrupado por label_abbr.
+- `GET /api/v1/metrics/reports/overview`: resumen de reportes dentro/fuera del SLA.
+- `GET /api/v1/metrics/tests/tat-daily`: serie diaria de TAT con desglose dentro/fuera de SLA y promedio m�vil.
 - `GET /api/v1/metrics/common/filters`: catalogos basicos (clientes, estados) para poblar dashboards.
 - `GET /api/v1/entities/samples/{sample_id}`: detalle de una muestra con orden/batches relacionados.
 - `GET /api/v1/entities/tests/{test_id}`: detalle de un test con sample/batches.

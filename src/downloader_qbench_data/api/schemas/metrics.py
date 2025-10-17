@@ -84,3 +84,67 @@ class MetricsFiltersResponse(BaseModel):
     sample_states: list[str]
     test_states: list[str]
     last_updated_at: Optional[datetime] = None
+
+
+class MetricsSummaryKPI(BaseModel):
+    total_samples: int
+    total_tests: int
+    total_customers: int
+    total_reports: int
+    average_tat_hours: Optional[float]
+
+
+class MetricsSummaryResponse(BaseModel):
+    kpis: MetricsSummaryKPI
+    last_updated_at: Optional[datetime]
+    range_start: Optional[datetime]
+    range_end: Optional[datetime]
+
+
+class DailyActivityPoint(BaseModel):
+    date: date
+    samples: int
+    tests: int
+
+
+class DailyActivityResponse(BaseModel):
+    current: list[DailyActivityPoint]
+    previous: Optional[list[DailyActivityPoint]] = None
+
+
+class NewCustomerItem(BaseModel):
+    id: int
+    name: str
+    created_at: datetime
+
+
+class NewCustomersResponse(BaseModel):
+    customers: list[NewCustomerItem]
+
+
+class TopCustomerItem(BaseModel):
+    id: int
+    name: str
+    tests: int
+
+
+class TopCustomersResponse(BaseModel):
+    customers: list[TopCustomerItem]
+
+
+class ReportsOverviewResponse(BaseModel):
+    total_reports: int
+    reports_within_sla: int
+    reports_beyond_sla: int
+
+
+class DailyTATPoint(BaseModel):
+    date: date
+    average_hours: Optional[float]
+    within_sla: int
+    beyond_sla: int
+
+
+class TestsTATDailyResponse(BaseModel):
+    points: list[DailyTATPoint]
+    moving_average_hours: Optional[list[TimeSeriesPoint]] = None

@@ -10,21 +10,161 @@ from sqlalchemy.orm import Session
 
 from ..dependencies import get_db_session
 from ..schemas.metrics import (
+    DailyActivityResponse,
     MetricsFiltersResponse,
+    MetricsSummaryResponse,
+    NewCustomersResponse,
+    ReportsOverviewResponse,
     SamplesOverviewResponse,
     TestsOverviewResponse,
     TestsTATBreakdownResponse,
+    TestsTATDailyResponse,
     TestsTATResponse,
+    TopCustomersResponse,
 )
 from ..services.metrics import (
+    get_daily_activity,
     get_metrics_filters,
+    get_metrics_summary,
+    get_new_customers,
+    get_reports_overview,
     get_samples_overview,
     get_tests_overview,
     get_tests_tat,
     get_tests_tat_breakdown,
+    get_tests_tat_daily,
+    get_top_customers_by_tests,
 )
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
+
+
+@router.get("/summary", response_model=MetricsSummaryResponse)
+def metrics_summary(
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    customer_id: Optional[int] = Query(None),
+    order_id: Optional[int] = Query(None),
+    state: Optional[str] = Query(None),
+    sla_hours: float = Query(48.0, ge=0),
+    session: Session = Depends(get_db_session),
+) -> MetricsSummaryResponse:
+    """Return KPI summary for the selected range."""
+
+    return get_metrics_summary(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+        sla_hours=sla_hours,
+    )
+
+
+@router.get("/activity/daily", response_model=DailyActivityResponse)
+def daily_activity(
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    customer_id: Optional[int] = Query(None),
+    order_id: Optional[int] = Query(None),
+    compare_previous: bool = Query(
+        False, description="Include data for the matching previous period"
+    ),
+    session: Session = Depends(get_db_session),
+) -> DailyActivityResponse:
+    """Return daily counts for samples and tests."""
+
+    return get_daily_activity(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        compare_previous=compare_previous,
+    )
+
+
+@router.get("/customers/new", response_model=NewCustomersResponse)
+def new_customers(
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    limit: int = Query(10, ge=1),
+    session: Session = Depends(get_db_session),
+) -> NewCustomersResponse:
+    """Return customers created within the selected range."""
+
+    return get_new_customers(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
+
+
+@router.get("/customers/top-tests", response_model=TopCustomersResponse)
+def top_customers_by_tests(
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    limit: int = Query(10, ge=1),
+    session: Session = Depends(get_db_session),
+) -> TopCustomersResponse:
+    """Return top customers ranked by tests in the range."""
+
+    return get_top_customers_by_tests(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
+
+
+@router.get("/reports/overview", response_model=ReportsOverviewResponse)
+def reports_overview(
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    customer_id: Optional[int] = Query(None),
+    order_id: Optional[int] = Query(None),
+    state: Optional[str] = Query(None),
+    sla_hours: float = Query(48.0, ge=0),
+    session: Session = Depends(get_db_session),
+) -> ReportsOverviewResponse:
+    """Return report counts inside/outside SLA."""
+
+    return get_reports_overview(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+        sla_hours=sla_hours,
+    )
+
+
+@router.get("/tests/tat-daily", response_model=TestsTATDailyResponse)
+def tests_tat_daily(
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    customer_id: Optional[int] = Query(None),
+    order_id: Optional[int] = Query(None),
+    state: Optional[str] = Query(None),
+    sla_hours: float = Query(48.0, ge=0),
+    moving_average_window: int = Query(7, ge=1),
+    session: Session = Depends(get_db_session),
+) -> TestsTATDailyResponse:
+    """Return daily TAT statistics including moving averages."""
+
+    return get_tests_tat_daily(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+        sla_hours=sla_hours,
+        moving_average_window=moving_average_window,
+    )
 
 
 @router.get("/samples/overview", response_model=SamplesOverviewResponse)
