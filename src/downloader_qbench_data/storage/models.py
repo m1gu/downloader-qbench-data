@@ -108,6 +108,32 @@ class Sample(Base):
     )
 
 
+class Test(Base):
+    """Represents a QBench test."""
+
+    __tablename__ = "tests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sample_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("samples.id", deferrable=True, initially="DEFERRED"), nullable=False
+    )
+    batch_ids: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False, default=list)
+    date_created: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    has_report: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    report_completed_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    label_abbr: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    worksheet_raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    raw_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class SyncCheckpoint(Base):
     """Tracks last successful sync state for an entity."""
 

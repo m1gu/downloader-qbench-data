@@ -13,6 +13,9 @@ import httpx
 
 LOGGER = logging.getLogger(__name__)
 
+_DEFAULT_TOKEN_LIFETIME_SECONDS = 3600
+_TOKEN_REFRESH_MARGIN_SECONDS = 60.0
+
 
 class QBenchClient:
     """Handles authenticated requests against QBench."""
@@ -33,6 +36,8 @@ class QBenchClient:
         self._client_secret = client_secret
         self._token_url = token_url
         self._timeout = timeout
+        self._token_expires_at: float | None = None
+        self._token_refresh_margin = _TOKEN_REFRESH_MARGIN_SECONDS
         self._client = httpx.Client(
             base_url=self._api_base,
             headers={
@@ -90,6 +95,23 @@ class QBenchClient:
         response.raise_for_status()
         return response.json()
 
+    def fetch_test(self, test_id: str | int, include_raw_worksheet_data: bool = False) -> Optional[Dict[str, Any]]:
+        """Retrieve a test by ID, optionally with raw worksheet data."""
+
+        params = {"include_raw_worksheet_data": "true"} if include_raw_worksheet_data else None
+        response = self._request("GET", f"/qbench/api/v1/test/{test_id}", params=params)
+        if response.status_code == httpx.codes.BAD_REQUEST and include_raw_worksheet_data:
+            LOGGER.warning(
+                "Retrying fetch_test(%s) with legacy parameter include_raw_worsksheet_data due to 400 BAD REQUEST",
+                test_id,
+            )
+            legacy_params = {"include_raw_worsksheet_data": "true"}
+            response = self._request("GET", f"/qbench/api/v1/test/{test_id}", params=legacy_params)
+        if response.status_code == httpx.codes.NOT_FOUND:
+            return None
+        response.raise_for_status()
+        return response.json()
+
     def _request(
         self,
         method: str,
@@ -103,11 +125,55 @@ class QBenchClient:
 
         attempt = 0
         delay = 1.0
+        reauth_attempts = 0
         while True:
+            self._ensure_token_valid()
             response = self._client.request(method, url, **kwargs)
             if response.status_code == httpx.codes.UNAUTHORIZED:
                 self._authenticate()
                 response = self._client.request(method, url, **kwargs)
+                reauth_attempts += 1
+                if reauth_attempts > max_retries:
+                    LOGGER.error("Exceeded max authentication retries for %s %s after 401 UNAUTHORIZED", method, url)
+                    return response
+                if response.status_code == httpx.codes.UNAUTHORIZED:
+                    continue
+            elif response.status_code == httpx.codes.BAD_REQUEST:
+                retry_due_to_auth = False
+                auth_error_reason = None
+                try:
+                    payload = response.json()
+                except ValueError:
+                    payload = {}
+                error_desc = (payload or {}).get("error_description", "")
+                if (
+                    (payload or {}).get("error") == "invalid_request"
+                    and "Invalid Authorization header format" in error_desc
+                ):
+                    retry_due_to_auth = True
+                    auth_error_reason = "invalid_request"
+                elif (payload or {}).get("error") == "invalid_grant":
+                    retry_due_to_auth = True
+                    auth_error_reason = "invalid_grant"
+                if retry_due_to_auth:
+                    if reauth_attempts >= max_retries:
+                        LOGGER.error(
+                            "Exceeded max authentication retries for %s %s after 400 %s",
+                            method,
+                            url,
+                            auth_error_reason or "authentication_error",
+                        )
+                        return response
+                    LOGGER.warning(
+                        "Re-authenticating due to expired/invalid token (400 %s) for %s %s",
+                        auth_error_reason or "authentication_error",
+                        method,
+                        url,
+                    )
+                    self._authenticate()
+                    reauth_attempts += 1
+                    time.sleep(1.0)
+                    continue
             if response.status_code != httpx.codes.TOO_MANY_REQUESTS:
                 return response
 
@@ -179,7 +245,7 @@ class QBenchClient:
             "page_size": page_size,
         }
         if include_raw_worksheet_data:
-            params["include_raw_worsksheet_data"] = "true"
+            params["include_raw_worksheet_data"] = "true"
 
         response = self._request("GET", "/qbench/api/v1/batch", params=params)
         response.raise_for_status()
@@ -221,6 +287,75 @@ class QBenchClient:
         response.raise_for_status()
         return response.json()
 
+    def list_tests(
+        self,
+        *,
+        page_num: int = 1,
+        page_size: int = 50,
+        customer_ids: Optional[Iterable[int]] = None,
+        assay_ids: Optional[Iterable[int]] = None,
+        panel_ids: Optional[Iterable[int]] = None,
+        tech_ids: Optional[Iterable[int]] = None,
+        test_tags: Optional[Iterable[str]] = None,
+        sample_tags: Optional[Iterable[str]] = None,
+        order_tags: Optional[Iterable[str]] = None,
+        order_ids: Optional[Iterable[int]] = None,
+        sample_ids: Optional[Iterable[int]] = None,
+        source_ids: Optional[Iterable[int]] = None,
+        location_ids: Optional[Iterable[int]] = None,
+        statuses: Optional[Iterable[str]] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Optional[str] = None,
+        include_raw_worksheet_data: bool = False,
+        **extra_filters: Any,
+    ) -> Dict[str, Any]:
+        """Retrieve a paginated list of tests."""
+
+        params: list[tuple[str, Any]] = [
+            ("page_num", page_num),
+            ("page_size", page_size),
+        ]
+        for name, values in [
+            ("customer_ids", customer_ids),
+            ("assay_ids", assay_ids),
+            ("panel_ids", panel_ids),
+            ("tech_ids", tech_ids),
+            ("test_tags", test_tags),
+            ("sample_tags", sample_tags),
+            ("order_tags", order_tags),
+            ("order_ids", order_ids),
+            ("sample_ids", sample_ids),
+            ("source_ids", source_ids),
+            ("location_ids", location_ids),
+            ("statuses", statuses),
+        ]:
+            if values:
+                for value in values:
+                    params.append((name, value))
+        if sort_by:
+            params.append(("sort_by", sort_by))
+        if sort_order:
+            params.append(("sort_order", sort_order))
+        if include_raw_worksheet_data:
+            params.append(("include_raw_worksheet_data", "true"))
+        for key, value in extra_filters.items():
+            if value is not None:
+                params.append((key, value))
+
+        response = self._request("GET", "/qbench/api/v1/test", params=params)
+        if response.status_code == httpx.codes.BAD_REQUEST and include_raw_worksheet_data:
+            LOGGER.warning(
+                "Retrying list_tests page %s with legacy parameter include_raw_worsksheet_data due to 400 BAD REQUEST",
+                page_num,
+            )
+            legacy_params = [
+                ("include_raw_worsksheet_data", value) if key == "include_raw_worksheet_data" else (key, value)
+                for key, value in params
+            ]
+            response = self._request("GET", "/qbench/api/v1/test", params=legacy_params)
+        response.raise_for_status()
+        return response.json()
+
     def _authenticate(self) -> None:
         """Obtain an access token using the JWT bearer grant flow."""
 
@@ -251,6 +386,7 @@ class QBenchClient:
             raise RuntimeError("QBench token response did not include an access token")
         token_type = token_payload.get("token_type", "Bearer")
         self._client.headers["Authorization"] = f"{token_type} {access_token}"
+        self._token_expires_at = self._calculate_token_expiry(token_payload)
 
     def _resolve_token_endpoint(self) -> str:
         if self._token_url:
@@ -262,6 +398,37 @@ class QBenchClient:
         else:
             host = base
         return f"{host}/oauth/token"
+
+    def _ensure_token_valid(self) -> None:
+        """Refresh the token if it is about to expire."""
+
+        if self._token_expires_at is None:
+            return
+        if time.time() < self._token_expires_at - self._token_refresh_margin:
+            return
+        LOGGER.info("Refreshing QBench access token due to upcoming expiration")
+        self._authenticate()
+
+    def _calculate_token_expiry(self, token_payload: dict[str, Any]) -> float:
+        """Determine when the current access token expires."""
+
+        raw_expires_in = token_payload.get("expires_in")
+        now = time.time()
+        expires_in: float | None = None
+        if isinstance(raw_expires_in, (int, float)):
+            expires_in = float(raw_expires_in)
+        elif isinstance(raw_expires_in, str):
+            try:
+                expires_in = float(raw_expires_in)
+            except ValueError:
+                expires_in = None
+        if expires_in is None or expires_in <= 0:
+            LOGGER.debug(
+                "Token response missing usable expires_in; defaulting to %s seconds",
+                _DEFAULT_TOKEN_LIFETIME_SECONDS,
+            )
+            expires_in = _DEFAULT_TOKEN_LIFETIME_SECONDS
+        return now + expires_in
 
 
 def _build_jwt_assertion(client_id: str, client_secret: str) -> str:

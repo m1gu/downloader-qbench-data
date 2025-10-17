@@ -1,6 +1,6 @@
 ﻿# Downloader QBench Data
 
-Aplicacion Python para descargar y mantener sincronizada la informacion de QBench en una base de datos PostgreSQL local. Actualmente cubre la descarga de **customers**, **orders**, **samples** y **batches** con soporte para cargas completas e incrementales, incluyendo checkpoints y manejo de errores.
+Aplicacion Python para descargar y mantener sincronizada la informacion de QBench en una base de datos PostgreSQL local. Actualmente cubre la descarga de **customers**, **orders**, **samples**, **tests** y **batches** con soporte para cargas completas e incrementales, incluyendo checkpoints y manejo de errores.
 
 ## Tecnologias principales
 - Python 3.12+
@@ -33,47 +33,49 @@ copy .env.example .env
 ## Estructura del proyecto
 ```
 Downloader-Qbench-Data/
-├── docs/
-│   └── roadmap.md            # Plan de trabajo y notas
-├── scripts/
-│   ├── run_sync_customers.py # Ejecuta la sincronizacion de clientes
-│   ├── run_sync_orders.py    # Ejecuta la sincronizacion de ordenes
-│   ├── run_sync_samples.py   # Ejecuta la sincronizacion de muestras
-│   └── run_sync_batches.py   # Ejecuta la sincronizacion de batches
-├── src/
-│   └── downloader_qbench_data/
-│       ├── clients/          # Cliente HTTP QBench
-│       ├── config.py         # Carga de configuracion y .env
-│       ├── ingestion/        # Pipelines de ingesta
-│       └── storage/          # Modelos y acceso a base de datos
-├── tests/                    # Pruebas unitarias
-├── requirements.txt          # Dependencias del proyecto
-├── README.md                 # Este archivo
-└── .env.example              # Plantilla de variables de entorno
+|-- docs/
+|   `-- roadmap.md            # Plan de trabajo y notas
+|-- scripts/
+|   |-- run_sync_customers.py # Ejecuta la sincronizacion de clientes
+|   |-- run_sync_orders.py    # Ejecuta la sincronizacion de ordenes
+|   |-- run_sync_samples.py   # Ejecuta la sincronizacion de muestras
+|   |-- run_sync_batches.py   # Ejecuta la sincronizacion de batches
+|   `-- run_sync_tests.py     # Ejecuta la sincronizacion de tests
+|-- src/
+|   `-- downloader_qbench_data/
+|       |-- clients/          # Cliente HTTP QBench
+|       |-- config.py         # Carga de configuracion y .env
+|       |-- ingestion/        # Pipelines de ingesta
+|       `-- storage/          # Modelos y acceso a base de datos
+|-- tests/                    # Pruebas unitarias
+|-- requirements.txt          # Dependencias del proyecto
+|-- README.md                 # Este archivo
+`-- .env.example              # Plantilla de variables de entorno
 ```
 
 ## Ejecucion
 1. Asegurate de tener la base y credenciales configuradas en `.env`.
-2. Activa el entorno virtual y ejecuta la sincronizacion deseada:
+2. Activa el entorno virtual antes de ejecutar cualquier script (`.\.venv\Scripts\Activate` en PowerShell).
+3. Lanza la sincronizacion de la entidad necesaria. Ejemplos de full refresh:
    ```bash
-   # Full refresh de clientes
    python scripts/run_sync_customers.py --full
-
-   # Sincronizacion incremental de clientes
-   python scripts/run_sync_customers.py
-
-   # Full refresh de ordenes (requiere clientes precargados)
-   python scripts/run_sync_orders.py --full
-
-   # Full refresh de samples (requiere ordenes cargadas previamente)
-   python scripts/run_sync_samples.py --full
-
-   # Full refresh de batches (requiere customers/orders cargados previamente)
-   python scripts/run_sync_batches.py --full
+   python scripts/run_sync_orders.py --full      # requiere customers
+   python scripts/run_sync_samples.py --full     # requiere orders
+   python scripts/run_sync_batches.py --full     # requiere customers/orders/samples
+   python scripts/run_sync_tests.py --full       # requiere samples y batches
    ```
-   Todos los scripts muestran una barra de progreso por pagina (`tqdm`).
+   Omite `--full` para realizar sincronizaciones incrementales aprovechando el checkpoint almacenado.
+4. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
 
-3. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `sync_checkpoints`).
+### Sincronizacion de tests
+- El pipeline usa el script `scripts/run_sync_tests.py` y crea/actualiza el checkpoint `sync_checkpoints.entity = 'tests'`.
+- Solo se persistiran tests cuyo `sample_id` exista localmente; si falta se registra en el resumen y se omite.
+- Durante la sincronizacion incremental se detiene automaticamente al encontrar registros ya sincronizados (`date_created` <= ultimo checkpoint).
+- Cuando QBench no entrega metadatos clave (label, titulo, worksheet, bandera de reporte) el proceso realiza un `fetch_test` individual y guarda el contenido bruto en `tests.worksheet_raw`.
+- Argumentos disponibles:
+  - `--full`: fuerza un refresh completo, ignorando el checkpoint previo.
+  - `--page-size`: sobrescribe el `page_size` configurado (maximo 50 por restricciones de la API).
+- El script muestra progreso por pagina con `tqdm` y al finalizar imprime un resumen con totales procesados, omisiones y la ultima fecha sincronizada.
 
 ## Proximos pasos
 - Completar pipelines para tests, assays y reports.
@@ -87,4 +89,5 @@ Downloader-Qbench-Data/
 
 ## Licencia
 Proyecto interno; ajustar segun politicas de la empresa.
+
 

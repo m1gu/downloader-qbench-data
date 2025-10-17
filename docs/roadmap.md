@@ -146,5 +146,4 @@
 - Modelo `Order` y pipeline `sync_orders` agregados con soporte incremental, validacion contra clientes locales y checkpoint dedicado.
 - Script CLI `scripts/run_sync_orders.py` con barra de progreso para sincronizar ordenes.
 - Utilidades compartidas de parseo de fechas y conversion numerica (`ingestion/utils.py`) con pruebas basicas.
-- Pipeline `sync_batches` implementado con arrays de IDs, checkpoint dedicado y script CLI (`scripts/run_sync_batches.py`) con opcion para incluir worksheet bruto.
-- Pipeline `sync_samples` implementado con validacion de `order_id`, conversion de batches y almacenamiento de metadata de tests.
+- Pipeline `sync_batches` implementado con arrays de IDs, checkpoint dedicado y script CLI (`scripts/run_sync_batches.py`) con opcion para incluir worksheet bruto.\n- Pipeline `sync_samples` implementado con validacion de `order_id`, conversion de batches y almacenamiento de metadata de tests.\n- Pipeline `sync_tests` implementado con validacion de `sample_id`, worksheet raw y enriquecimiento opcional por test individual.\n
