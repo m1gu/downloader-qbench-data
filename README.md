@@ -58,6 +58,7 @@ Downloader-Qbench-Data/
 2. Activa el entorno virtual antes de ejecutar cualquier script (`.\.venv\Scripts\Activate` en PowerShell).
 3. Lanza la sincronizacion de la entidad necesaria. Ejemplos de full refresh:
    ```bash
+   python scripts/run_sync_all.py --full     # ejecuta todas las entidades en secuencia
    python scripts/run_sync_customers.py --full
    python scripts/run_sync_orders.py --full      # requiere customers
    python scripts/run_sync_samples.py --full     # requiere orders
@@ -65,6 +66,13 @@ Downloader-Qbench-Data/
    python scripts/run_sync_tests.py --full       # requiere samples y batches
    ```
    Omite `--full` para realizar sincronizaciones incrementales aprovechando el checkpoint almacenado.
+   El comando `run_sync_all.py` acepta argumentos adicionales, por ejemplo:
+   ```bash
+   python scripts/run_sync_all.py                 # incremental de todas las entidades
+   python scripts/run_sync_all.py --entity orders --entity samples
+   ```
+   Si se especifican entidades individuales, la sincronizacion respeta el orden y detiene la
+   ejecucion ante el primer fallo para evitar inconsistencias.
 4. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
 
 ### Sincronizacion de tests
