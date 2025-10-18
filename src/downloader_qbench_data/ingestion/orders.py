@@ -33,6 +33,7 @@ class OrderSyncSummary:
     last_synced_at: Optional[datetime] = None
     total_pages: Optional[int] = None
     start_page: int = 1
+    last_id: Optional[int] = None
 
 
 def sync_orders(
@@ -51,17 +52,20 @@ def sync_orders(
         checkpoint = _get_or_create_checkpoint(session)
         if full_refresh:
             checkpoint.last_synced_at = None
+            checkpoint.last_id = None
             checkpoint.last_cursor = 1
         start_page = checkpoint.last_cursor or 1
         last_synced_at = checkpoint.last_synced_at
+        last_id = checkpoint.last_id
         checkpoint.status = "running"
         checkpoint.failed = False
         checkpoint.message = None
         known_customers = _load_customer_ids(session)
 
-    summary = OrderSyncSummary(last_synced_at=last_synced_at, start_page=start_page)
+    summary = OrderSyncSummary(last_synced_at=last_synced_at, start_page=start_page, last_id=last_id)
     baseline_synced_at = last_synced_at
     max_synced_at = last_synced_at
+    max_id = last_id
     current_page = start_page
     try:
         with QBenchClient(
@@ -88,6 +92,7 @@ def sync_orders(
                 summary.pages_seen += 1
                 records_to_upsert = []
                 for item in orders:
+                    order_id = item["id"]
                     customer_id = item.get("customer_account_id")
                     if not customer_id:
                         summary.skipped_missing_customer += 1
@@ -101,17 +106,15 @@ def sync_orders(
                         )
                         continue
 
-                    created_at = parse_qbench_datetime(item.get("date_created"))
                     if (
                         not full_refresh
-                        and baseline_synced_at is not None
-                        and created_at is not None
-                        and created_at <= baseline_synced_at
+                        and last_id is not None
+                        and order_id <= last_id
                     ):
                         summary.skipped_old += 1
-                        stop_after_page = True
                         continue
 
+                    created_at = parse_qbench_datetime(item.get("date_created"))
                     record = {
                         "id": item["id"],
                         "custom_formatted_id": item.get("custom_formatted_id"),
@@ -129,8 +132,10 @@ def sync_orders(
                     summary.processed += 1
                     if created_at and (max_synced_at is None or created_at > max_synced_at):
                         max_synced_at = created_at
+                    if max_id is None or order_id > max_id:
+                        max_id = order_id
 
-                _persist_batch(records_to_upsert, current_page, max_synced_at, settings)
+                _persist_batch(records_to_upsert, current_page, max_synced_at, max_id, settings)
                 if progress_callback:
                     progress_callback(summary.pages_seen, total_pages)
 
@@ -145,8 +150,9 @@ def sync_orders(
         _mark_checkpoint_failed(current_page, settings, error=exc)
         raise
 
-    _mark_checkpoint_completed(current_page, max_synced_at, settings)
+    _mark_checkpoint_completed(current_page, max_synced_at, max_id, settings)
     summary.last_synced_at = max_synced_at
+    summary.last_id = max_id
     return summary
 
 
@@ -154,6 +160,7 @@ def _persist_batch(
     rows: Iterable[dict],
     current_page: int,
     max_synced_at: Optional[datetime],
+    max_id: Optional[int],
     settings: AppSettings,
 ) -> None:
     """Persist a batch of orders and update checkpoint progress."""
@@ -182,15 +189,17 @@ def _persist_batch(
             }
             session.execute(insert_stmt.on_conflict_do_update(index_elements=[Order.id], set_=update_stmt))
             checkpoint.last_synced_at = max_synced_at
+            checkpoint.last_id = max_id
 
 
-def _mark_checkpoint_completed(current_page: int, max_synced_at: Optional[datetime], settings: AppSettings) -> None:
+def _mark_checkpoint_completed(current_page: int, max_synced_at: Optional[datetime], max_id: Optional[int], settings: AppSettings) -> None:
     """Mark the checkpoint as completed."""
 
     with session_scope(settings) as session:
         checkpoint = _get_or_create_checkpoint(session)
         checkpoint.last_cursor = current_page
         checkpoint.last_synced_at = max_synced_at
+        checkpoint.last_id = max_id
         checkpoint.status = "completed"
         checkpoint.failed = False
         checkpoint.message = None

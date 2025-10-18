@@ -142,6 +142,7 @@ class SyncCheckpoint(Base):
     entity: Mapped[str] = mapped_column(String(64), primary_key=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_cursor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
