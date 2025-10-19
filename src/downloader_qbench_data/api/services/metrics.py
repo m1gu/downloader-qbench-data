@@ -49,7 +49,11 @@ def _daterange_conditions(column, start: Optional[datetime], end: Optional[datet
     if start:
         conditions.append(column >= start)
     if end:
-        conditions.append(column <= end)
+        if isinstance(end, datetime) and end.hour == 0 and end.minute == 0 and end.second == 0 and end.microsecond == 0:
+            adjusted_end = end + timedelta(days=1)
+            conditions.append(column < adjusted_end)
+        else:
+            conditions.append(column <= end)
     return conditions
 
 
@@ -81,8 +85,11 @@ def _apply_test_filters(
     order_id: Optional[int],
     state: Optional[str],
     batch_id: Optional[int],
+    date_column=Test.date_created,
 ):
-    conditions = _daterange_conditions(Test.date_created, date_from, date_to)
+    conditions: list = []
+    if date_column is not None:
+        conditions.extend(_daterange_conditions(date_column, date_from, date_to))
     join_sample = False
     join_order = False
     if customer_id is not None:
@@ -505,15 +512,22 @@ def get_metrics_summary(
         select(func.count()).select_from(Customer).where(*customer_conditions)
     ).scalar_one()
 
-    report_conditions = list(test_conditions)
+    report_conditions, report_join_sample, report_join_order = _apply_test_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+        batch_id=None,
+        date_column=Test.report_completed_date,
+    )
     report_conditions.append(Test.report_completed_date.is_not(None))
-    report_conditions.extend(_daterange_conditions(Test.report_completed_date, date_from, date_to))
     total_reports = _count_with_filters(
         session,
         Test,
         conditions=report_conditions,
-        join_sample=join_sample,
-        join_order=join_order_tests,
+        join_sample=report_join_sample,
+        join_order=report_join_order,
     )
 
     tat_summary = get_tests_tat(
@@ -692,11 +706,9 @@ def get_reports_overview(
         date_to=date_to,
         customer_id=customer_id,
         order_id=order_id,
-        state=state,
+        state="REPORTED",
         batch_id=None,
     )
-    conditions.append(Test.report_completed_date.is_not(None))
-    conditions.extend(_daterange_conditions(Test.report_completed_date, date_from, date_to))
 
     tat_expr = func.extract("epoch", Test.report_completed_date - Test.date_created) / 3600.0
     within_case = case((tat_expr <= sla_hours, 1), else_=0)

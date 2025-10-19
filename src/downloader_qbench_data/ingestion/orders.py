@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Iterable, Optional
 
@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from downloader_qbench_data.clients.qbench import QBenchClient
 from downloader_qbench_data.config import AppSettings, get_settings
-from downloader_qbench_data.ingestion.utils import parse_qbench_datetime, safe_int
+from downloader_qbench_data.ingestion.utils import SkippedEntity, parse_qbench_datetime, safe_int
 from downloader_qbench_data.storage import Customer, Order, SyncCheckpoint, session_scope
 
 LOGGER = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ class OrderSyncSummary:
     total_pages: Optional[int] = None
     start_page: int = 1
     last_id: Optional[int] = None
+    skipped_entities: list[SkippedEntity] = field(default_factory=list)
 
 
 def sync_orders(
@@ -96,6 +97,9 @@ def sync_orders(
                     customer_id = item.get("customer_account_id")
                     if not customer_id:
                         summary.skipped_missing_customer += 1
+                        summary.skipped_entities.append(
+                            SkippedEntity(entity_id=order_id, reason="missing_customer_account_id")
+                        )
                         continue
                     if customer_id not in known_customers:
                         summary.skipped_unknown_customer += 1
@@ -103,6 +107,13 @@ def sync_orders(
                             "Skipping order %s because customer %s does not exist locally",
                             item.get("id"),
                             customer_id,
+                        )
+                        summary.skipped_entities.append(
+                            SkippedEntity(
+                                entity_id=order_id,
+                                reason="unknown_customer",
+                                details={"customer_account_id": customer_id},
+                            )
                         )
                         continue
 
@@ -232,5 +243,4 @@ def _load_customer_ids(session: Session) -> set[int]:
 
     result = session.execute(select(Customer.id))
     return {row[0] for row in result}
-
 

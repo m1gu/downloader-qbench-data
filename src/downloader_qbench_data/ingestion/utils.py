@@ -3,12 +3,37 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 import re
 from decimal import Decimal, InvalidOperation
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional, Sequence
 
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class SkippedEntity:
+    """Represents an entity that could not be persisted during sync."""
+
+    entity_id: int | str | None
+    reason: str
+    details: dict[str, Any] | None = None
+
+    def __repr__(self) -> str:
+        details_repr = f", details={self.details!r}" if self.details else ""
+        return f"SkippedEntity(entity_id={self.entity_id!r}, reason={self.reason!r}{details_repr})"
+
+
+def summarize_skipped_entities(skipped: Sequence[SkippedEntity]) -> list[str]:
+    """Return human-readable lines summarising skipped entities."""
+
+    lines: list[str] = []
+    for item in skipped:
+        detail_part = f", details={item.details}" if item.details else ""
+        lines.append(f"id={item.entity_id}, reason={item.reason}{detail_part}")
+    return lines
+
 
 _DATETIME_FORMATS = [
     "%m/%d/%Y %I:%M %p",

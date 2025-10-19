@@ -18,6 +18,7 @@ if str(SRC_DIR) not in sys.path:
 
 from downloader_qbench_data.config import get_settings
 from downloader_qbench_data.ingestion.samples import sync_samples
+from downloader_qbench_data.ingestion.utils import summarize_skipped_entities
 
 
 def parse_args() -> argparse.Namespace:
@@ -68,6 +69,12 @@ def main() -> None:
     if disable_progress:
         logging.info("Processed %s pages", summary.pages_seen)
     logging.info("Sample sync completed: %s", pformat(summary.__dict__))
+    if summary.skipped_entities:
+        logging.warning("Samples skipped (%d):", len(summary.skipped_entities))
+        for line in summarize_skipped_entities(summary.skipped_entities):
+            logging.warning("  %s", line)
+    else:
+        logging.info("No samples were skipped during the sync.")
 
 
 if __name__ == "__main__":

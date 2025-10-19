@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Iterable, Optional
 
@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from downloader_qbench_data.clients.qbench import QBenchClient
 from downloader_qbench_data.config import AppSettings, get_settings
-from downloader_qbench_data.ingestion.utils import ensure_int_list, parse_qbench_datetime
+from downloader_qbench_data.ingestion.utils import (
+    SkippedEntity,
+    ensure_int_list,
+    parse_qbench_datetime,
+)
 from downloader_qbench_data.storage import Sample, SyncCheckpoint, Test, session_scope
 
 LOGGER = logging.getLogger(__name__)
@@ -41,6 +45,7 @@ class TestSyncSummary:
     detail_fetches: int = 0
     detail_bad_request_failures: int = 0
     page_bad_request_failures: int = 0
+    skipped_entities: list[SkippedEntity] = field(default_factory=list)
 
 
 def sync_tests(
@@ -96,6 +101,13 @@ def sync_tests(
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code == httpx.codes.BAD_REQUEST:
                         summary.page_bad_request_failures += 1
+                        summary.skipped_entities.append(
+                            SkippedEntity(
+                                entity_id=f"page-{current_page}",
+                                reason="list_tests_bad_request",
+                                details={"status_code": exc.response.status_code},
+                            )
+                        )
                         LOGGER.warning(
                             "Skipping page %s due to repeated 400 BAD REQUEST when listing tests",
                             current_page,
@@ -141,6 +153,9 @@ def sync_tests(
                     sample_id = item.get("sample_id")
                     if not sample_id:
                         summary.skipped_missing_sample += 1
+                        summary.skipped_entities.append(
+                            SkippedEntity(entity_id=test_id, reason="missing_sample_id")
+                        )
                         continue
                     if sample_id not in known_samples:
                         summary.skipped_unknown_sample += 1
@@ -148,6 +163,13 @@ def sync_tests(
                             "Skipping test %s because sample %s does not exist locally",
                             item.get("id"),
                             sample_id,
+                        )
+                        summary.skipped_entities.append(
+                            SkippedEntity(
+                                entity_id=test_id,
+                                reason="unknown_sample",
+                                details={"sample_id": sample_id},
+                            )
                         )
                         continue
 
@@ -158,6 +180,13 @@ def sync_tests(
                     except httpx.HTTPStatusError as exc:
                         if exc.response.status_code == httpx.codes.BAD_REQUEST:
                             summary.detail_bad_request_failures += 1
+                            summary.skipped_entities.append(
+                                SkippedEntity(
+                                    entity_id=test_id,
+                                    reason="detail_bad_request",
+                                    details={"status_code": exc.response.status_code},
+                                )
+                            )
                             LOGGER.warning(
                                 "Skipping test %s due to repeated 400 BAD REQUEST when fetching detail",
                                 item.get("id"),

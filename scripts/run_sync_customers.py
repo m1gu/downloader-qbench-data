@@ -19,6 +19,7 @@ if str(SRC_DIR) not in sys.path:
 
 from downloader_qbench_data.config import get_settings
 from downloader_qbench_data.ingestion.customers import sync_customers
+from downloader_qbench_data.ingestion.utils import summarize_skipped_entities
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,6 +70,12 @@ def main() -> None:
     if disable_progress:
         logging.info("Processed %s pages", summary.pages_seen)
     logging.info("Customer sync completed: %s", pformat(summary.__dict__))
+    if summary.skipped_entities:
+        logging.warning("Customers skipped (%d):", len(summary.skipped_entities))
+        for line in summarize_skipped_entities(summary.skipped_entities):
+            logging.warning("  %s", line)
+    else:
+        logging.info("No customers were skipped during the sync.")
 
 
 if __name__ == "__main__":

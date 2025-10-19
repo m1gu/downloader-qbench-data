@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Iterable, Optional
 
@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from downloader_qbench_data.clients.qbench import QBenchClient
 from downloader_qbench_data.config import AppSettings, get_settings
-from downloader_qbench_data.ingestion.utils import ensure_int_list, parse_qbench_datetime
+from downloader_qbench_data.ingestion.utils import SkippedEntity, ensure_int_list, parse_qbench_datetime
 from downloader_qbench_data.storage import Batch, SyncCheckpoint, session_scope
 
 LOGGER = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ class BatchSyncSummary:
     last_synced_at: Optional[datetime] = None
     total_pages: Optional[int] = None
     start_page: int = 1
+    skipped_entities: list[SkippedEntity] = field(default_factory=list)
 
 
 def sync_batches(

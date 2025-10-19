@@ -22,6 +22,7 @@ from downloader_qbench_data.ingestion.pipeline import (
     SyncOrchestrationError,
     sync_all_entities,
 )
+from downloader_qbench_data.ingestion.utils import summarize_skipped_entities
 
 
 def parse_args() -> argparse.Namespace:
@@ -122,6 +123,13 @@ def main() -> None:
             result.entity,
             pformat(getattr(result.summary, "__dict__", result.summary)),
         )
+        skipped = getattr(result.summary, "skipped_entities", None) if result.summary else None
+        if skipped:
+            logging.warning("  Skipped entries (%d):", len(skipped))
+            for line in summarize_skipped_entities(skipped):
+                logging.warning("    %s", line)
+        elif result.summary:
+            logging.info("  No skipped entries for '%s'.", result.entity)
 
 
 if __name__ == "__main__":

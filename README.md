@@ -36,13 +36,14 @@ Downloader-Qbench-Data/
 |-- docs/
 |   `-- roadmap.md            # Plan de trabajo y notas
 |-- scripts/
-|   |-- run_sync_customers.py # Ejecuta la sincronizacion de clientes
-|   |-- run_sync_orders.py    # Ejecuta la sincronizacion de ordenes
-|   |-- run_sync_samples.py   # Ejecuta la sincronizacion de muestras
-|   |-- run_sync_batches.py   # Ejecuta la sincronizacion de batches
-|   |-- run_sync_all.py      # Orquesta todas las entidades
+|   |-- run_sync_customers.py # Ejecuta la sincronizacion de clientes (lista IDs omitidos)
+|   |-- run_sync_orders.py    # Ejecuta la sincronizacion de ordenes (lista IDs omitidos)
+|   |-- run_sync_samples.py   # Ejecuta la sincronizacion de muestras (lista IDs omitidos)
+|   |-- run_sync_batches.py   # Ejecuta la sincronizacion de batches (lista IDs omitidos)
+|   |-- run_sync_tests.py    # Ejecuta la sincronizacion de tests (lista IDs omitidos)
+|   |-- run_sync_all.py      # Orquesta todas las entidades y muestra omitidos por entidad
 |   |-- run_api.py           # Levanta la API REST
-|   `-- run_sync_tests.py    # Ejecuta la sincronizacion de tests
+|   `-- fetch_single_entity.py # Descarga manualmente entidades puntuales por ID
 |-- src/
 |   `-- downloader_qbench_data/
 |       |-- clients/          # Cliente HTTP QBench
@@ -74,6 +75,7 @@ Downloader-Qbench-Data/
    python scripts/run_sync_all.py --entity orders --entity samples
    ```
    Si se especifican entidades individuales, la sincronizacion respeta el orden y detiene la ejecucion ante el primer fallo para evitar inconsistencias.
+   Al finalizar cada sync se imprimira un bloque con los IDs omitidos y el motivo (dependencias faltantes, errores 400, etc.) para facilitar su correccion manual.
 4. Levanta la API REST si necesitas exponer los datos sincronizados:
    ```bash
    python scripts/run_api.py --host 0.0.0.0 --port 8000
@@ -84,7 +86,13 @@ Downloader-Qbench-Data/
    python scripts/run_dashboard.py
    ```
    Puedes ajustar el backend usando la variable `DASHBOARD_API_BASE_URL` si el servicio corre en otro host.
-6. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
+6. Descarga entidades puntuales cuando necesites reprocesar IDs específicos:
+   ```bash
+   python scripts/fetch_single_entity.py test 12345
+   python scripts/fetch_single_entity.py sample 67890 --skip-foreign-check
+   ```
+   El comando inserta/actualiza la fila en la base, valida dependencias básicas y actualiza el checkpoint.
+7. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
 ### Sincronizacion de tests
 - El pipeline usa el script `scripts/run_sync_tests.py` y crea/actualiza el checkpoint `sync_checkpoints.entity = 'tests'`.
 - Solo se persistiran tests cuyo `sample_id` exista localmente; si falta se registra en el resumen y se omite.
@@ -104,7 +112,7 @@ Downloader-Qbench-Data/
 - `GET /api/v1/metrics/customers/top-tests`: top N clientes por tests en el rango.
 - `GET /api/v1/metrics/tests/tat`: estadisticas de TAT (promedio, mediana, p95, distribucion y serie opcional por dia/semana).
 - `GET /api/v1/metrics/tests/tat-breakdown`: detalle de TAT agrupado por label_abbr.
-- `GET /api/v1/metrics/reports/overview`: resumen de reportes dentro/fuera del SLA.
+- `GET /api/v1/metrics/reports/overview`: resumen de reportes dentro/fuera del SLA (usa `date_created` y solo tests con estado `REPORTED`).
 - `GET /api/v1/metrics/tests/tat-daily`: serie diaria de TAT con desglose dentro/fuera de SLA y promedio m�vil.
 - `GET /api/v1/metrics/common/filters`: catalogos basicos (clientes, estados) para poblar dashboards.
 - `GET /api/v1/entities/samples/{sample_id}`: detalle de una muestra con orden/batches relacionados.

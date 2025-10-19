@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Iterable, Optional
 
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from downloader_qbench_data.clients.qbench import QBenchClient
 from downloader_qbench_data.config import AppSettings, get_settings
 from downloader_qbench_data.ingestion.utils import (
+    SkippedEntity,
     ensure_int_list,
     parse_qbench_datetime,
     safe_int,
@@ -39,6 +40,7 @@ class SampleSyncSummary:
     total_pages: Optional[int] = None
     start_page: int = 1
     last_id: Optional[int] = None
+    skipped_entities: list[SkippedEntity] = field(default_factory=list)
 
 
 def sync_samples(
@@ -110,6 +112,9 @@ def sync_samples(
                     order_id = item.get("order_id")
                     if not order_id:
                         summary.skipped_missing_order += 1
+                        summary.skipped_entities.append(
+                            SkippedEntity(entity_id=sample_id, reason="missing_order_id")
+                        )
                         continue
                     if order_id not in known_orders:
                         summary.skipped_unknown_order += 1
@@ -117,6 +122,13 @@ def sync_samples(
                             "Skipping sample %s because order %s does not exist locally",
                             item.get("id"),
                             order_id,
+                        )
+                        summary.skipped_entities.append(
+                            SkippedEntity(
+                                entity_id=sample_id,
+                                reason="unknown_order",
+                                details={"order_id": order_id},
+                            )
                         )
                         continue
 
