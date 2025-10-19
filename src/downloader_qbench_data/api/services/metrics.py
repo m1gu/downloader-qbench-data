@@ -324,6 +324,7 @@ def get_tests_tat(
         order_id=order_id,
         state=state,
         batch_id=None,
+        date_column=Test.report_completed_date,
     )
     conditions.append(Test.report_completed_date.is_not(None))
 
@@ -343,9 +344,9 @@ def get_tests_tat(
         tat_values.append(tat_hours)
 
         if group_by == "day":
-            period = created_at.date()
+            period = completed_at.date()
         elif group_by == "week":
-            iso_year, iso_week, _ = created_at.isocalendar()
+            iso_year, iso_week, _ = completed_at.isocalendar()
             period = date.fromisocalendar(iso_year, iso_week, 1)
         else:
             period = None
@@ -708,7 +709,9 @@ def get_reports_overview(
         order_id=order_id,
         state="REPORTED",
         batch_id=None,
+        date_column=Test.report_completed_date,
     )
+    conditions.append(Test.report_completed_date.is_not(None))
 
     tat_expr = func.extract("epoch", Test.report_completed_date - Test.date_created) / 3600.0
     within_case = case((tat_expr <= sla_hours, 1), else_=0)
@@ -751,9 +754,9 @@ def get_tests_tat_daily(
         order_id=order_id,
         state=state,
         batch_id=None,
+        date_column=Test.report_completed_date,
     )
     conditions.append(Test.report_completed_date.is_not(None))
-    conditions.extend(_daterange_conditions(Test.report_completed_date, date_from, date_to))
 
     tat_expr = func.extract("epoch", Test.report_completed_date - Test.date_created) / 3600.0
     within_case = case((tat_expr <= sla_hours, 1), else_=0)
