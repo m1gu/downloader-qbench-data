@@ -25,6 +25,8 @@ from downloader_qbench_data.api.schemas import (
     TestsTATDistributionBucket,
     TestsTATMetrics,
     TestsTATResponse,
+    TestsLabelCountItem,
+    TestsLabelDistributionResponse,
     TimeSeriesPoint,
     TopCustomerItem,
     TopCustomersResponse,
@@ -32,6 +34,17 @@ from downloader_qbench_data.api.schemas import (
     NewCustomersResponse,
     ReportsOverviewResponse,
     TestsTATDailyResponse,
+    OrdersThroughputResponse,
+    OrdersThroughputPoint,
+    OrdersThroughputTotals,
+    SamplesCycleTimeResponse,
+    SamplesCycleTimePoint,
+    SamplesCycleTimeTotals,
+    SamplesCycleMatrixItem,
+    OrdersSlowestResponse,
+    SlowOrderItem,
+    OrdersFunnelResponse,
+    OrdersFunnelStage,
 )
 
 
@@ -256,6 +269,132 @@ def test_metrics_filters_endpoint(monkeypatch):
     resp = client.get("/api/v1/metrics/common/filters")
     assert resp.status_code == 200
     assert resp.json()["customers"][0]["name"] == "Acme"
+
+
+def test_tests_label_distribution_endpoint(monkeypatch):
+    response_payload = TestsLabelDistributionResponse(
+        labels=[
+            TestsLabelCountItem(label="CN", count=40),
+            TestsLabelCountItem(label="PS", count=25),
+        ]
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.metrics.get_tests_label_distribution",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/metrics/tests/label-distribution")
+    assert resp.status_code == 200
+    assert resp.json()["labels"][0]["label"] == "CN"
+
+
+def test_orders_throughput_endpoint(monkeypatch):
+    response_payload = OrdersThroughputResponse(
+        interval="week",
+        points=[
+            OrdersThroughputPoint(
+                period_start=date(2025, 10, 12),
+                orders_created=8,
+                orders_completed=6,
+                average_completion_hours=48.0,
+                median_completion_hours=36.0,
+            )
+        ],
+        totals=OrdersThroughputTotals(
+            orders_created=8,
+            orders_completed=6,
+            average_completion_hours=48.0,
+            median_completion_hours=36.0,
+        ),
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_orders_throughput",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/orders/throughput?interval=week")
+    assert resp.status_code == 200
+    assert resp.json()["totals"]["orders_created"] == 8
+
+
+def test_samples_cycle_time_endpoint(monkeypatch):
+    response_payload = SamplesCycleTimeResponse(
+        interval="day",
+        points=[
+            SamplesCycleTimePoint(
+                period_start=date(2025, 10, 16),
+                completed_samples=5,
+                average_cycle_hours=30.0,
+                median_cycle_hours=28.0,
+            )
+        ],
+        totals=SamplesCycleTimeTotals(
+            completed_samples=5,
+            average_cycle_hours=30.0,
+            median_cycle_hours=28.0,
+        ),
+        by_matrix_type=[
+            SamplesCycleMatrixItem(
+                matrix_type="Cured Flower",
+                completed_samples=3,
+                average_cycle_hours=32.0,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_samples_cycle_time",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/samples/cycle-time")
+    assert resp.status_code == 200
+    assert resp.json()["by_matrix_type"][0]["matrix_type"] == "Cured Flower"
+
+
+def test_orders_funnel_endpoint(monkeypatch):
+    response_payload = OrdersFunnelResponse(
+        total_orders=12,
+        stages=[
+            OrdersFunnelStage(stage="created", count=12),
+            OrdersFunnelStage(stage="received", count=9),
+            OrdersFunnelStage(stage="completed", count=7),
+            OrdersFunnelStage(stage="reported", count=5),
+            OrdersFunnelStage(stage="on_hold", count=2),
+        ],
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_orders_funnel",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/orders/funnel")
+    assert resp.status_code == 200
+    assert resp.json()["stages"][0]["stage"] == "created"
+
+
+def test_orders_slowest_endpoint(monkeypatch):
+    response_payload = OrdersSlowestResponse(
+        items=[
+            SlowOrderItem(
+                order_id=101,
+                order_reference="bucket-2025-10-06",
+                customer_name="Aggregate",
+                state="completed",
+                completion_hours=114.0,
+                age_hours=115.0,
+                date_created=datetime(2025, 10, 6, 12, 0, 0),
+                date_completed=datetime(2025, 10, 11, 10, 0, 0),
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_slowest_orders",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/orders/slowest?limit=3")
+    assert resp.status_code == 200
+    assert resp.json()["items"][0]["order_reference"] == "bucket-2025-10-06"
 
 
 def test_get_sample_detail(monkeypatch):

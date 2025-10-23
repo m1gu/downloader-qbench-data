@@ -25,6 +25,8 @@ from ..schemas.metrics import (
     SamplesOverviewKPI,
     SamplesOverviewResponse,
     TestsDistributionItem,
+    TestsLabelCountItem,
+    TestsLabelDistributionResponse,
     TestsOverviewKPI,
     TestsOverviewResponse,
     TestsTATBreakdownItem,
@@ -874,6 +876,73 @@ def _compute_p95(values: list[float]) -> float | None:
     sorted_values = sorted(values)
     index = max(0, min(int(len(sorted_values) * 0.95) - 1, len(sorted_values) - 1))
     return sorted_values[index]
+
+
+# ---------------------------------------------------------------------------
+# Tests label distribution
+# ---------------------------------------------------------------------------
+
+
+def get_tests_label_distribution(
+    session: Session,
+    *,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    customer_id: Optional[int] = None,
+    order_id: Optional[int] = None,
+    state: Optional[str] = None,
+) -> TestsLabelDistributionResponse:
+    """Return counts for predefined test labels in the given range."""
+
+    target_labels = [
+        "CN",
+        "MB",
+        "TP",
+        "MY",
+        "HM",
+        "FFM",
+        "HO",
+        "HLVd",
+        "MC",
+        "PS",
+        "PN",
+        "RS",
+        "ST",
+        "SP",
+        "WA",
+        "YM",
+    ]
+
+    conditions, join_sample, join_order = _apply_test_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+        batch_id=None,
+        date_column=Test.date_created,
+    )
+    conditions.append(Test.label_abbr.in_(target_labels))
+
+    stmt = select(Test.label_abbr, func.count()).select_from(Test)
+    if join_sample:
+        stmt = stmt.join(Sample, Sample.id == Test.sample_id)
+    if join_order:
+        stmt = stmt.join(Order, Sample.order_id == Order.id)
+    stmt = stmt.where(*conditions).group_by(Test.label_abbr)
+
+    counts = {label: 0 for label in target_labels}
+    for label, count in session.execute(stmt):
+        if not label:
+            continue
+        counts[label] = int(count or 0)
+
+    ordered = sorted(
+        [TestsLabelCountItem(label=label, count=counts[label]) for label in target_labels],
+        key=lambda item: item.count,
+        reverse=True,
+    )
+    return TestsLabelDistributionResponse(labels=ordered)
 
 
 # ---------------------------------------------------------------------------

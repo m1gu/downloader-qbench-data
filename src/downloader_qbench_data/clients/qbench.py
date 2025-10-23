@@ -69,6 +69,15 @@ class QBenchClient:
         response.raise_for_status()
         return response.json()
 
+    def fetch_order(self, order_id: int | str) -> Optional[Dict[str, Any]]:
+        """Retrieve an order by ID."""
+
+        response = self._request("GET", f"/qbench/api/v1/order/{order_id}")
+        if response.status_code == httpx.codes.NOT_FOUND:
+            return None
+        response.raise_for_status()
+        return response.json()
+
     def update_test_worksheet(
         self,
         test_id: str | int,

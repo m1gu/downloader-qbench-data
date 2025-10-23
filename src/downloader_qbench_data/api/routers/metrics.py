@@ -16,6 +16,7 @@ from ..schemas.metrics import (
     NewCustomersResponse,
     ReportsOverviewResponse,
     SamplesOverviewResponse,
+    TestsLabelDistributionResponse,
     TestsOverviewResponse,
     TestsTATBreakdownResponse,
     TestsTATDailyResponse,
@@ -29,6 +30,7 @@ from ..services.metrics import (
     get_new_customers,
     get_reports_overview,
     get_samples_overview,
+    get_tests_label_distribution,
     get_tests_overview,
     get_tests_tat,
     get_tests_tat_breakdown,
@@ -260,3 +262,24 @@ def metrics_filters(
     """Return values for populating dashboard filters."""
 
     return get_metrics_filters(session)
+
+
+@router.get("/tests/label-distribution", response_model=TestsLabelDistributionResponse)
+def tests_label_distribution(
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    customer_id: Optional[int] = Query(None),
+    order_id: Optional[int] = Query(None),
+    state: Optional[str] = Query(None),
+    session: Session = Depends(get_db_session),
+) -> TestsLabelDistributionResponse:
+    """Return counts of predefined test labels for the selected creation range."""
+
+    return get_tests_label_distribution(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=state,
+    )

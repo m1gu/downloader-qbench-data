@@ -148,3 +148,12 @@ class DailyTATPoint(BaseModel):
 class TestsTATDailyResponse(BaseModel):
     points: list[DailyTATPoint]
     moving_average_hours: Optional[list[TimeSeriesPoint]] = None
+
+
+class TestsLabelCountItem(BaseModel):
+    label: str
+    count: int
+
+
+class TestsLabelDistributionResponse(BaseModel):
+    labels: list[TestsLabelCountItem]

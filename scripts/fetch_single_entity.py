@@ -41,7 +41,7 @@ ENTITY_CONFIG = {
         "id_field": "id",
     },
     "order": {
-        "fetch_method": lambda client, entity_id: client.list_orders(page_num=1, page_size=1),  # Note: list doesn't support ID filter
+        "fetch_method": lambda client, entity_id: client.fetch_order(entity_id),
         "model": Order,
         "id_field": "id",
     },
@@ -69,7 +69,7 @@ def fetch_entity(client: QBenchClient, entity_type: str, entity_id: str) -> Opti
     fetch_method = config["fetch_method"]
 
     try:
-        if entity_type in ["customer", "order", "batch"]:
+        if entity_type in ["customer", "batch"]:
             # For entities without direct fetch by ID, we need to list and find
             # This is a limitation - ideally QBench would have individual fetch endpoints
             LOGGER.warning(f"Entity type '{entity_type}' does not support direct fetch by ID. "

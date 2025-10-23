@@ -26,6 +26,19 @@ from .metrics import (
     TopCustomerItem,
     TopCustomersResponse,
 )
+from .analytics import (
+    OrdersFunnelResponse,
+    OrdersFunnelStage,
+    OrdersThroughputPoint,
+    OrdersThroughputResponse,
+    OrdersThroughputTotals,
+    SamplesCycleMatrixItem,
+    SamplesCycleTimePoint,
+    SamplesCycleTimeResponse,
+    SamplesCycleTimeTotals,
+    OrdersSlowestResponse,
+    SlowOrderItem,
+)
 from .entities import SampleDetailResponse, TestDetailResponse
 
 __all__ = [
@@ -55,4 +68,15 @@ __all__ = [
     "TopCustomersResponse",
     "SampleDetailResponse",
     "TestDetailResponse",
+    "OrdersThroughputResponse",
+    "OrdersThroughputPoint",
+    "OrdersThroughputTotals",
+    "SamplesCycleTimeResponse",
+    "SamplesCycleTimePoint",
+    "SamplesCycleTimeTotals",
+    "SamplesCycleMatrixItem",
+    "OrdersFunnelResponse",
+    "OrdersFunnelStage",
+    "OrdersSlowestResponse",
+    "SlowOrderItem",
 ]
