@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Iterable, Optional, Sequence
 
 from downloader_qbench_data.config import AppSettings, get_settings
@@ -13,6 +13,8 @@ from downloader_qbench_data.ingestion.customers import sync_customers
 from downloader_qbench_data.ingestion.orders import sync_orders
 from downloader_qbench_data.ingestion.samples import sync_samples
 from downloader_qbench_data.ingestion.tests import sync_tests
+from downloader_qbench_data.ingestion.recovery import EntityRecoveryService
+from downloader_qbench_data.ingestion.utils import SkippedEntity
 
 LOGGER = logging.getLogger(__name__)
 
@@ -79,6 +81,11 @@ def sync_all_entities(
     page_size: Optional[int] = None,
     progress_callback: Optional[EntityProgressCallback] = None,
     raise_on_error: bool = True,
+    start_datetime: Optional[datetime] = None,
+    end_datetime: Optional[datetime] = None,
+    ignore_checkpoint: bool = False,
+    dependency_resolver: Optional[EntityRecoveryService] = None,
+    dependency_max_attempts: int = 3,
 ) -> SyncRunSummary:
     """Synchronise multiple entities sequentially using stored checkpoints.
 
@@ -90,6 +97,11 @@ def sync_all_entities(
         page_size: Optional page size override passed through to each entity pipeline.
         progress_callback: Optional callable receiving ``(entity, processed_pages, total_pages)``.
         raise_on_error: When ``True`` re-raises a :class:`SyncOrchestrationError` if any entity fails.
+        start_datetime: Optional lower bound (inclusive) applied when fetching entities.
+        end_datetime: Optional upper bound (inclusive) applied when fetching entities.
+        ignore_checkpoint: When ``True`` omits stored cursors to rescan the requested window.
+        dependency_resolver: Optional :class:`EntityRecoveryService` reused to recover dependencies.
+        dependency_max_attempts: Maximum attempts per missing dependency before skipping the item.
 
     Returns:
         :class:`SyncRunSummary` detailing the outcome of the run.
@@ -103,10 +115,13 @@ def sync_all_entities(
     aggregated_error: Exception | None = None
 
     LOGGER.info(
-        "Starting multi-entity sync (entities=%s, full_refresh=%s, page_size=%s)",
+        "Starting multi-entity sync (entities=%s, full_refresh=%s, page_size=%s, ignore_checkpoint=%s, start=%s, end=%s)",
         ", ".join(sequence),
         full_refresh,
         page_size,
+        ignore_checkpoint,
+        start_datetime.isoformat() if start_datetime else None,
+        end_datetime.isoformat() if end_datetime else None,
     )
 
     for entity in sequence:
@@ -119,6 +134,11 @@ def sync_all_entities(
                 full_refresh=full_refresh,
                 page_size=page_size,
                 progress_callback=_wrap_progress_callback(progress_callback, entity),
+                start_datetime=start_datetime,
+                end_datetime=end_datetime,
+                ignore_checkpoint=ignore_checkpoint,
+                dependency_resolver=dependency_resolver,
+                dependency_max_attempts=dependency_max_attempts,
             )
             entity_completed_at = datetime.utcnow()
             duration = (entity_completed_at - entity_started_at).total_seconds()
@@ -179,6 +199,67 @@ def sync_all_entities(
             summary.total_duration_seconds,
         )
     return summary
+
+
+
+
+def sync_recent_entities(
+    settings: Optional[AppSettings] = None,
+    *,
+    lookback_days: Optional[int] = None,
+    entities: Optional[Iterable[str]] = None,
+    page_size: Optional[int] = None,
+    progress_callback: Optional[EntityProgressCallback] = None,
+    dependency_max_attempts: int = 3,
+    raise_on_error: bool = True,
+) -> SyncRunSummary:
+    """Run a multi-entity sync constrained to a recent lookback window."""
+
+    effective_settings = settings or get_settings()
+    configured_lookback = lookback_days if lookback_days is not None else effective_settings.sync_lookback_days
+    try:
+        lookback_value = int(configured_lookback)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid lookback_days value: {configured_lookback!r}") from exc
+    if lookback_value < 0:
+        lookback_value = 0
+    end_dt = datetime.utcnow()
+    start_dt = end_dt - timedelta(days=lookback_value)
+
+    resolver = EntityRecoveryService(effective_settings)
+    LOGGER.info(
+        "Running windowed sync (days=%s, start=%s, end=%s)",
+        lookback_value,
+        start_dt.isoformat(),
+        end_dt.isoformat(),
+    )
+    try:
+        summary = sync_all_entities(
+            effective_settings,
+            entities=entities,
+            full_refresh=False,
+            page_size=page_size,
+            progress_callback=progress_callback,
+            raise_on_error=raise_on_error,
+            start_datetime=start_dt,
+            end_datetime=end_dt,
+            ignore_checkpoint=True,
+            dependency_resolver=resolver,
+            dependency_max_attempts=dependency_max_attempts,
+        )
+    finally:
+        resolver.close()
+    return summary
+
+
+def collect_skipped_entities(summary: SyncRunSummary) -> dict[str, list[SkippedEntity]]:
+    """Group skipped entities by sync name for reporting."""
+
+    grouped: dict[str, list[SkippedEntity]] = {}
+    for result in summary.results:
+        skipped = getattr(result.summary, "skipped_entities", None) if result.summary else None
+        grouped[result.entity] = list(skipped) if skipped else []
+    return grouped
 
 
 def _wrap_progress_callback(

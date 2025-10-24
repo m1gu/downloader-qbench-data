@@ -13,6 +13,11 @@ from sqlalchemy.orm import Session
 
 from downloader_qbench_data.clients.qbench import QBenchClient
 from downloader_qbench_data.config import AppSettings, get_settings
+from downloader_qbench_data.ingestion.recovery import (
+    DependencyRecoveryOutcome,
+    EntityRecoveryService,
+    attempt_dependency_recovery,
+)
 from downloader_qbench_data.ingestion.utils import (
     SkippedEntity,
     ensure_int_list,
@@ -41,6 +46,7 @@ class SampleSyncSummary:
     start_page: int = 1
     last_id: Optional[int] = None
     skipped_entities: list[SkippedEntity] = field(default_factory=list)
+    dependencies_recovered: int = 0
 
 
 def sync_samples(
@@ -49,6 +55,11 @@ def sync_samples(
     full_refresh: bool = False,
     page_size: Optional[int] = None,
     progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+    start_datetime: Optional[datetime] = None,
+    end_datetime: Optional[datetime] = None,
+    ignore_checkpoint: bool = False,
+    dependency_resolver: Optional[EntityRecoveryService] = None,
+    dependency_max_attempts: int = 3,
 ) -> SampleSyncSummary:
     """Synchronise sample data from QBench into PostgreSQL."""
 
@@ -64,6 +75,10 @@ def sync_samples(
         start_page = checkpoint.last_cursor or 1
         last_synced_at = checkpoint.last_synced_at
         last_id = checkpoint.last_id
+        if ignore_checkpoint:
+            start_page = 1
+            last_synced_at = None
+            last_id = None
         checkpoint.status = "running"
         checkpoint.failed = False
         checkpoint.message = None
@@ -74,6 +89,7 @@ def sync_samples(
     max_synced_at = last_synced_at
     max_id = last_id
     current_page = start_page
+    window_mode = bool(ignore_checkpoint and start_datetime)
 
     try:
         with QBenchClient(
@@ -85,11 +101,13 @@ def sync_samples(
             total_pages: Optional[int] = None
             while True:
                 stop_after_page = False
+                sort_by = "date_created" if window_mode else "id"
+                sort_order = "desc" if window_mode else "asc"
                 payload = client.list_samples(
                     page_num=current_page,
                     page_size=effective_page_size,
-                    sort_by="id",
-                    sort_order="asc",
+                    sort_by=sort_by,
+                    sort_order=sort_order,
                 )
                 total_pages = payload.get("total_pages") or total_pages
                 summary.total_pages = total_pages
@@ -116,23 +134,53 @@ def sync_samples(
                             SkippedEntity(entity_id=sample_id, reason="missing_order_id")
                         )
                         continue
+
                     if order_id not in known_orders:
-                        summary.skipped_unknown_order += 1
-                        LOGGER.warning(
-                            "Skipping sample %s because order %s does not exist locally",
-                            item.get("id"),
-                            order_id,
-                        )
-                        summary.skipped_entities.append(
-                            SkippedEntity(
-                                entity_id=sample_id,
-                                reason="unknown_order",
-                                details={"order_id": order_id},
+                        recovery_outcome: Optional[DependencyRecoveryOutcome] = None
+                        if dependency_resolver:
+                            recovery_outcome = attempt_dependency_recovery(
+                                dependency_resolver,
+                                "orders",
+                                order_id,
+                                max_attempts=dependency_max_attempts,
                             )
-                        )
-                        continue
+                            if recovery_outcome.succeeded:
+                                known_orders.add(order_id)
+                                summary.dependencies_recovered += 1
+
+                        if order_id not in known_orders:
+                            summary.skipped_unknown_order += 1
+                            LOGGER.warning(
+                                "Skipping sample %s because order %s does not exist locally%s",
+                                item.get("id"),
+                                order_id,
+                                ""
+                                if not recovery_outcome or recovery_outcome.succeeded
+                                else f" (recovery failed after {recovery_outcome.attempts} attempts)",
+                            )
+                            summary.skipped_entities.append(
+                                SkippedEntity(
+                                    entity_id=sample_id,
+                                    reason="unknown_order",
+                                    details={
+                                        "order_id": order_id,
+                                        "recovery_attempts": (
+                                            recovery_outcome.attempts if recovery_outcome else 0
+                                        ),
+                                        "recovery_error": (
+                                            recovery_outcome.error if recovery_outcome else None
+                                        ),
+                                    },
+                                )
+                            )
+                            continue
 
                     created_at = parse_qbench_datetime(item.get("date_created"))
+                    if window_mode and start_datetime and created_at and created_at < start_datetime:
+                        stop_after_page = True
+                        break
+                    if end_datetime and created_at and created_at > end_datetime:
+                        continue
                     record = {
                         "id": item["id"],
                         "sample_name": item.get("sample_name") or item.get("description"),
@@ -162,7 +210,8 @@ def sync_samples(
                 if progress_callback:
                     progress_callback(summary.pages_seen, total_pages)
 
-                # Continue processing all pages to ensure we get all new samples
+                if stop_after_page:
+                    break
                 if total_pages and current_page >= total_pages:
                     break
                 current_page += 1

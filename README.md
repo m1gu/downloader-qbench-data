@@ -28,6 +28,9 @@ pip install -r requirements.txt
 # Configurar variables de entorno (copiar .env.example)
 copy .env.example .env
 # editar .env con credenciales QBench y datos de PostgreSQL
+# variables opcionales:
+#   SYNC_LOOKBACK_DAYS=7        # horizonte por defecto (en días) para el pipeline de sincronización ventana
+#   PAGE_SIZE=50                # tamaño base de página (el valor real no excederá el máximo permitido por QBench)
 ```
 
 ## Estructura del proyecto
@@ -67,8 +70,14 @@ Downloader-Qbench-Data/
    python scripts/run_sync_samples.py --full     # requiere orders
    python scripts/run_sync_batches.py --full     # requiere customers/orders/samples
    python scripts/run_sync_tests.py --full       # requiere samples y batches
+   python scripts/run_sync_window.py --days 7    # sincroniza ventana reciente (orden descendente) y genera reporte
    ```
    Omite `--full` para realizar sincronizaciones incrementales aprovechando el checkpoint almacenado.
+   El comando `run_sync_window.py` mantiene un rango móvil actualizado sin recorrer todo el feed:
+   - Usa `--days N` (o el valor por defecto `SYNC_LOOKBACK_DAYS`) para definir el horizonte.
+   - Cada entidad se consulta ordenada por `date_created` descendente; cuando los registros están fuera del rango se detiene la paginación.
+   - Cuando falta una dependencia (cliente/orden/muestra/test) intenta recuperarla sin salir del flujo, con un máximo de 3 intentos antes de registrar el elemento en `skipped`.
+   - Genera un informe en `docs/sync_reports/sync_report_<fecha>.txt` con el total de nuevos registros por entidad y los IDs que no pudieron sincronizarse.
    El comando `run_sync_all.py` acepta argumentos adicionales, por ejemplo:
    ```bash
    python scripts/run_sync_all.py                 # incremental de todas las entidades
@@ -90,6 +99,7 @@ Downloader-Qbench-Data/
    python scripts/fetch_single_entity.py test 12345
    python scripts/fetch_single_entity.py sample 67890 --skip-foreign-check
    ```
+   El comando utiliza el `EntityRecoveryService`, de modo que trae dependencias faltantes en cascada y actualiza los checkpoints relacionados automáticamente.
    El comando inserta/actualiza la fila en la base, valida dependencias basicas y actualiza el checkpoint.
 7. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
 

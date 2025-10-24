@@ -69,6 +69,25 @@ class QBenchClient:
         response.raise_for_status()
         return response.json()
 
+    def fetch_customer(self, customer_id: int | str) -> Optional[Dict[str, Any]]:
+        """Retrieve a customer by ID."""
+
+        response = self._request("GET", f"/qbench/api/v1/customer/{customer_id}")
+        if response.status_code == httpx.codes.NOT_FOUND:
+            return None
+        response.raise_for_status()
+        return response.json()
+
+    def fetch_batch(self, batch_id: int | str, *, include_raw_worksheet_data: bool = False) -> Optional[Dict[str, Any]]:
+        """Retrieve a batch by ID."""
+
+        params = {"include_raw_worksheet_data": "true"} if include_raw_worksheet_data else None
+        response = self._request("GET", f"/qbench/api/v1/batch/{batch_id}", params=params)
+        if response.status_code == httpx.codes.NOT_FOUND:
+            return None
+        response.raise_for_status()
+        return response.json()
+
     def fetch_order(self, order_id: int | str) -> Optional[Dict[str, Any]]:
         """Retrieve an order by ID."""
 
@@ -246,6 +265,8 @@ class QBenchClient:
         page_num: int = 1,
         page_size: int = 50,
         include_raw_worksheet_data: bool = False,
+        sort_by: Optional[str] = None,
+        sort_order: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Retrieve a paginated list of batches."""
 
@@ -255,6 +276,10 @@ class QBenchClient:
         }
         if include_raw_worksheet_data:
             params["include_raw_worksheet_data"] = "true"
+        if sort_by:
+            params["sort_by"] = sort_by
+        if sort_order:
+            params["sort_order"] = sort_order
 
         response = self._request("GET", "/qbench/api/v1/batch", params=params)
         response.raise_for_status()

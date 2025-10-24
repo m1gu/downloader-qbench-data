@@ -44,6 +44,7 @@ class AppSettings(BaseModel):
     qbench: QBenchSettings
     database: DatabaseSettings
     page_size: int = 50
+    sync_lookback_days: int = 7
 
 
 def _load_from_environment() -> AppSettings:
@@ -68,12 +69,21 @@ def _load_from_environment() -> AppSettings:
             user=os.environ["POSTGRES_USER"],
             password=os.environ["POSTGRES_PASSWORD"],
         )
+        page_size = int(os.getenv("PAGE_SIZE", "50"))
+        sync_lookback_days = int(os.getenv("SYNC_LOOKBACK_DAYS", "7"))
     except KeyError as exc:
         missing = exc.args[0]
         raise RuntimeError(f"Missing required environment variable: {missing}") from exc
     except ValidationError as exc:
         raise RuntimeError(f"Environment configuration is invalid: {exc}") from exc
-    return AppSettings(qbench=qbench, database=database)
+    except ValueError as exc:
+        raise RuntimeError(f"Environment configuration has invalid numeric value: {exc}") from exc
+    return AppSettings(
+        qbench=qbench,
+        database=database,
+        page_size=page_size,
+        sync_lookback_days=sync_lookback_days,
+    )
 
 
 @lru_cache(maxsize=1)

@@ -1,4 +1,4 @@
-﻿"""Ingestion routines for QBench tests."""
+"""Ingestion routines for QBench tests."""
 
 from __future__ import annotations
 
@@ -15,6 +15,11 @@ from sqlalchemy.orm import Session
 
 from downloader_qbench_data.clients.qbench import QBenchClient
 from downloader_qbench_data.config import AppSettings, get_settings
+from downloader_qbench_data.ingestion.recovery import (
+    DependencyRecoveryOutcome,
+    EntityRecoveryService,
+    attempt_dependency_recovery,
+)
 from downloader_qbench_data.ingestion.utils import (
     SkippedEntity,
     ensure_int_list,
@@ -46,6 +51,7 @@ class TestSyncSummary:
     detail_bad_request_failures: int = 0
     page_bad_request_failures: int = 0
     skipped_entities: list[SkippedEntity] = field(default_factory=list)
+    dependencies_recovered: int = 0
 
 
 def sync_tests(
@@ -54,6 +60,11 @@ def sync_tests(
     full_refresh: bool = False,
     page_size: Optional[int] = None,
     progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+    start_datetime: Optional[datetime] = None,
+    end_datetime: Optional[datetime] = None,
+    ignore_checkpoint: bool = False,
+    dependency_resolver: Optional[EntityRecoveryService] = None,
+    dependency_max_attempts: int = 3,
 ) -> TestSyncSummary:
     """Synchronise test data from QBench into PostgreSQL."""
 
@@ -69,6 +80,10 @@ def sync_tests(
         start_page = checkpoint.last_cursor or 1
         last_synced_at = checkpoint.last_synced_at
         last_id = checkpoint.last_id
+        if ignore_checkpoint:
+            start_page = 1
+            last_synced_at = None
+            last_id = None
         checkpoint.status = "running"
         checkpoint.failed = False
         checkpoint.message = None
@@ -79,6 +94,7 @@ def sync_tests(
     max_synced_at = last_synced_at
     max_id = last_id
     current_page = start_page
+    window_mode = bool(ignore_checkpoint and start_datetime)
 
     try:
         with QBenchClient(
@@ -94,8 +110,8 @@ def sync_tests(
                     payload = client.list_tests(
                         page_num=current_page,
                         page_size=effective_page_size,
-                        sort_by="id",
-                        sort_order="asc",
+                        sort_by="date_created" if window_mode else "id",
+                        sort_order="desc" if window_mode else "asc",
                         include_raw_worksheet_data=True,
                     )
                 except httpx.HTTPStatusError as exc:
@@ -158,22 +174,51 @@ def sync_tests(
                         )
                         continue
                     if sample_id not in known_samples:
-                        summary.skipped_unknown_sample += 1
-                        LOGGER.warning(
-                            "Skipping test %s because sample %s does not exist locally",
-                            item.get("id"),
-                            sample_id,
-                        )
-                        summary.skipped_entities.append(
-                            SkippedEntity(
-                                entity_id=test_id,
-                                reason="unknown_sample",
-                                details={"sample_id": sample_id},
+                        recovery_outcome: Optional[DependencyRecoveryOutcome] = None
+                        if dependency_resolver:
+                            recovery_outcome = attempt_dependency_recovery(
+                                dependency_resolver,
+                                "samples",
+                                sample_id,
+                                max_attempts=dependency_max_attempts,
                             )
-                        )
-                        continue
+                            if recovery_outcome.succeeded:
+                                known_samples.add(sample_id)
+                                summary.dependencies_recovered += 1
+
+                        if sample_id not in known_samples:
+                            summary.skipped_unknown_sample += 1
+                            LOGGER.warning(
+                                "Skipping test %s because sample %s does not exist locally%s",
+                                item.get("id"),
+                                sample_id,
+                                ""
+                                if not recovery_outcome or recovery_outcome.succeeded
+                                else f" (recovery failed after {recovery_outcome.attempts} attempts)",
+                            )
+                            summary.skipped_entities.append(
+                                SkippedEntity(
+                                    entity_id=test_id,
+                                    reason="unknown_sample",
+                                    details={
+                                        "sample_id": sample_id,
+                                        "recovery_attempts": (
+                                            recovery_outcome.attempts if recovery_outcome else 0
+                                        ),
+                                        "recovery_error": (
+                                            recovery_outcome.error if recovery_outcome else None
+                                        ),
+                                    },
+                                )
+                            )
+                            continue
 
                     created_at = parse_qbench_datetime(item.get("date_created"))
+                    if window_mode and start_datetime and created_at and created_at < start_datetime:
+                        stop_after_page = True
+                        break
+                    if end_datetime and created_at and created_at > end_datetime:
+                        continue
 
                     try:
                         enriched = _ensure_required_fields(client, item)
@@ -223,6 +268,8 @@ def sync_tests(
                 if progress_callback:
                     progress_callback(summary.pages_seen, total_pages)
 
+                if stop_after_page:
+                    break
                 # Continue processing all pages to ensure we get all new tests
                 if total_pages and current_page >= total_pages:
                     break

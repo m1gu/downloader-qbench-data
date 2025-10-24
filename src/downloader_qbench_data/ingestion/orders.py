@@ -13,6 +13,11 @@ from sqlalchemy.orm import Session
 
 from downloader_qbench_data.clients.qbench import QBenchClient
 from downloader_qbench_data.config import AppSettings, get_settings
+from downloader_qbench_data.ingestion.recovery import (
+    EntityRecoveryService,
+    attempt_dependency_recovery,
+    DependencyRecoveryOutcome,
+)
 from downloader_qbench_data.ingestion.utils import SkippedEntity, parse_qbench_datetime, safe_int
 from downloader_qbench_data.storage import Customer, Order, SyncCheckpoint, session_scope
 
@@ -35,6 +40,7 @@ class OrderSyncSummary:
     start_page: int = 1
     last_id: Optional[int] = None
     skipped_entities: list[SkippedEntity] = field(default_factory=list)
+    dependencies_recovered: int = 0
 
 
 def sync_orders(
@@ -43,6 +49,11 @@ def sync_orders(
     full_refresh: bool = False,
     page_size: Optional[int] = None,
     progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+    start_datetime: Optional[datetime] = None,
+    end_datetime: Optional[datetime] = None,
+    ignore_checkpoint: bool = False,
+    dependency_resolver: Optional[EntityRecoveryService] = None,
+    dependency_max_attempts: int = 3,
 ) -> OrderSyncSummary:
     """Synchronise order data from QBench into PostgreSQL."""
 
@@ -58,6 +69,10 @@ def sync_orders(
         start_page = checkpoint.last_cursor or 1
         last_synced_at = checkpoint.last_synced_at
         last_id = checkpoint.last_id
+        if ignore_checkpoint:
+            start_page = 1
+            last_synced_at = None
+            last_id = None
         checkpoint.status = "running"
         checkpoint.failed = False
         checkpoint.message = None
@@ -102,20 +117,43 @@ def sync_orders(
                         )
                         continue
                     if customer_id not in known_customers:
-                        summary.skipped_unknown_customer += 1
-                        LOGGER.warning(
-                            "Skipping order %s because customer %s does not exist locally",
-                            item.get("id"),
-                            customer_id,
-                        )
-                        summary.skipped_entities.append(
-                            SkippedEntity(
-                                entity_id=order_id,
-                                reason="unknown_customer",
-                                details={"customer_account_id": customer_id},
+                        recovery_outcome: Optional[DependencyRecoveryOutcome] = None
+                        if dependency_resolver and customer_id is not None:
+                            recovery_outcome = attempt_dependency_recovery(
+                                dependency_resolver,
+                                "customers",
+                                customer_id,
+                                max_attempts=dependency_max_attempts,
                             )
-                        )
-                        continue
+                            if recovery_outcome.succeeded:
+                                known_customers.add(customer_id)
+                                summary.dependencies_recovered += 1
+                            else:
+                                LOGGER.warning(
+                                    "Skipping order %s because customer %s does not exist locally "
+                                    "(recovery failed after %s attempts)",
+                                    item.get("id"),
+                                    customer_id,
+                                    recovery_outcome.attempts,
+                                )
+                        if customer_id not in known_customers:
+                            summary.skipped_unknown_customer += 1
+                            summary.skipped_entities.append(
+                                SkippedEntity(
+                                    entity_id=order_id,
+                                    reason="unknown_customer",
+                                    details={
+                                        "customer_account_id": customer_id,
+                                        "recovery_attempts": (
+                                            recovery_outcome.attempts if recovery_outcome else 0
+                                        ),
+                                        "recovery_error": (
+                                            recovery_outcome.error if recovery_outcome else None
+                                        ),
+                                    },
+                                )
+                            )
+                            continue
 
                     if (
                         not full_refresh
@@ -126,6 +164,13 @@ def sync_orders(
                         continue
 
                     created_at = parse_qbench_datetime(item.get("date_created"))
+                    if start_datetime and created_at and created_at < start_datetime:
+                        summary.skipped_old += 1
+                        stop_after_page = True
+                        continue
+                    if end_datetime and created_at and created_at > end_datetime:
+                        # Outside upper bound; skip without marking as old
+                        continue
                     record = {
                         "id": item["id"],
                         "custom_formatted_id": item.get("custom_formatted_id"),
@@ -243,4 +288,3 @@ def _load_customer_ids(session: Session) -> set[int]:
 
     result = session.execute(select(Customer.id))
     return {row[0] for row in result}
-

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from downloader_qbench_data.clients.qbench import QBenchClient
 from downloader_qbench_data.config import AppSettings, get_settings
+from downloader_qbench_data.ingestion.recovery import EntityRecoveryService
 from downloader_qbench_data.ingestion.utils import SkippedEntity, parse_qbench_datetime
 from downloader_qbench_data.storage import Customer, SyncCheckpoint, session_scope
 
@@ -41,11 +42,17 @@ def sync_customers(
     full_refresh: bool = False,
     page_size: Optional[int] = None,
     progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+    start_datetime: Optional[datetime] = None,
+    end_datetime: Optional[datetime] = None,
+    ignore_checkpoint: bool = False,
+    dependency_resolver: Optional[EntityRecoveryService] = None,
+    dependency_max_attempts: int = 3,
 ) -> CustomerSyncSummary:
     """Synchronise customer data from QBench into PostgreSQL."""
 
     settings = settings or get_settings()
     effective_page_size = min(page_size or settings.page_size, API_MAX_PAGE_SIZE)
+    _ = dependency_resolver, dependency_max_attempts  # parameters kept for signature parity
 
     with session_scope(settings) as session:
         checkpoint = _get_or_create_checkpoint(session)
@@ -56,6 +63,10 @@ def sync_customers(
         start_page = checkpoint.last_cursor or 1
         last_synced_at = checkpoint.last_synced_at
         last_id = checkpoint.last_id
+        if ignore_checkpoint:
+            start_page = 1
+            last_synced_at = None
+            last_id = None
         checkpoint.status = "running"
         checkpoint.failed = False
         checkpoint.message = None
@@ -101,6 +112,12 @@ def sync_customers(
                         and customer_id <= last_id
                     ):
                         summary.skipped_old += 1
+                        continue
+
+                    if start_datetime and created_at and created_at < start_datetime:
+                        summary.skipped_old += 1
+                        continue
+                    if end_datetime and created_at and created_at > end_datetime:
                         continue
 
                     records_to_upsert.append(
