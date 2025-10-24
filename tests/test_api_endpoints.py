@@ -6,45 +6,61 @@ from fastapi.testclient import TestClient
 from downloader_qbench_data.api import create_app
 from downloader_qbench_data.api.dependencies import get_db_session
 from downloader_qbench_data.api.schemas import (
+    CustomerAlertItem,
+    CustomerAlertsResponse,
+    CustomerHeatmapPoint,
     DailyActivityPoint,
     DailyActivityResponse,
     DailyTATPoint,
+    MetricsFiltersResponse,
     MetricsSummaryKPI,
     MetricsSummaryResponse,
-    MetricsFiltersResponse,
+    NewCustomerItem,
+    NewCustomersResponse,
+    OrdersFunnelResponse,
+    OrdersFunnelStage,
+    OrdersSlowestResponse,
+    OrdersThroughputPoint,
+    OrdersThroughputResponse,
+    OrdersThroughputTotals,
+    OverdueClientSummary,
+    OverdueHeatmapCell,
+    OverdueOrderItem,
+    OverdueOrdersKpis,
+    OverdueOrdersResponse,
+    OverdueStateBreakdown,
+    OverdueTimelinePoint,
+    QualityKpiOrders,
+    QualityKpiTests,
+    QualityKpisResponse,
+    ReportsOverviewResponse,
     SampleDetailResponse,
+    SamplesCycleMatrixItem,
+    SamplesCycleTimePoint,
+    SamplesCycleTimeResponse,
+    SamplesCycleTimeTotals,
     SamplesDistributionItem,
     SamplesOverviewKPI,
     SamplesOverviewResponse,
+    SlowOrderItem,
     TestDetailResponse,
+    TestStateBucket,
+    TestStatePoint,
     TestsDistributionItem,
+    TestsLabelCountItem,
+    TestsLabelDistributionResponse,
     TestsOverviewKPI,
     TestsOverviewResponse,
     TestsTATBreakdownItem,
     TestsTATBreakdownResponse,
+    TestsTATDailyResponse,
     TestsTATDistributionBucket,
     TestsTATMetrics,
     TestsTATResponse,
-    TestsLabelCountItem,
-    TestsLabelDistributionResponse,
+    TestsStateDistributionResponse,
     TimeSeriesPoint,
     TopCustomerItem,
     TopCustomersResponse,
-    NewCustomerItem,
-    NewCustomersResponse,
-    ReportsOverviewResponse,
-    TestsTATDailyResponse,
-    OrdersThroughputResponse,
-    OrdersThroughputPoint,
-    OrdersThroughputTotals,
-    SamplesCycleTimeResponse,
-    SamplesCycleTimePoint,
-    SamplesCycleTimeTotals,
-    SamplesCycleMatrixItem,
-    OrdersSlowestResponse,
-    SlowOrderItem,
-    OrdersFunnelResponse,
-    OrdersFunnelStage,
 )
 
 
@@ -395,6 +411,196 @@ def test_orders_slowest_endpoint(monkeypatch):
     resp = client.get("/api/v1/analytics/orders/slowest?limit=3")
     assert resp.status_code == 200
     assert resp.json()["items"][0]["order_reference"] == "bucket-2025-10-06"
+
+
+def test_orders_overdue_endpoint(monkeypatch):
+    response_payload = OverdueOrdersResponse(
+        interval="week",
+        minimum_days_overdue=30,
+        warning_window_days=5,
+        sla_hours=72.0,
+        kpis=OverdueOrdersKpis(
+            total_overdue=12,
+            average_open_hours=850.5,
+            max_open_hours=1200.0,
+            percent_overdue_vs_active=0.6,
+            overdue_beyond_sla=8,
+            overdue_within_sla=4,
+        ),
+        top_orders=[
+            OverdueOrderItem(
+                order_id=501,
+                custom_formatted_id="ORD-501",
+                customer_id=42,
+                customer_name="Arcanna LLC",
+                state="ON HOLD",
+                date_created=datetime(2025, 8, 15, 9, 30),
+                open_hours=1200.0,
+            )
+        ],
+        clients=[
+            OverdueClientSummary(
+                customer_id=42,
+                customer_name="Arcanna LLC",
+                overdue_orders=7,
+                total_open_hours=4500.0,
+                average_open_hours=642.8,
+                max_open_hours=1200.0,
+            )
+        ],
+        warning_orders=[
+            OverdueOrderItem(
+                order_id=610,
+                custom_formatted_id="ORD-610",
+                customer_id=77,
+                customer_name="North Labs",
+                state="IN PROGRESS",
+                date_created=datetime(2025, 9, 25, 10, 0),
+                open_hours=650.0,
+            )
+        ],
+        timeline=[
+            OverdueTimelinePoint(
+                period_start=date(2025, 10, 6),
+                overdue_orders=5,
+            )
+        ],
+        heatmap=[
+            OverdueHeatmapCell(
+                customer_id=42,
+                customer_name="Arcanna LLC",
+                period_start=date(2025, 10, 6),
+                overdue_orders=3,
+            )
+        ],
+        state_breakdown=[
+            OverdueStateBreakdown(state="ON HOLD", count=8, ratio=0.6667),
+            OverdueStateBreakdown(state="IN PROGRESS", count=4, ratio=0.3333),
+        ],
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_overdue_orders",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/orders/overdue?min_days_overdue=30")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["kpis"]["total_overdue"] == 12
+    assert body["top_orders"][0]["order_id"] == 501
+
+
+def test_customers_alerts_endpoint(monkeypatch):
+    response_payload = CustomerAlertsResponse(
+        interval="week",
+        sla_hours=48.0,
+        min_alert_percentage=0.1,
+        heatmap=[
+            CustomerHeatmapPoint(
+                customer_id=1,
+                customer_name="Acme Labs",
+                period_start=date(2025, 10, 6),
+                total_tests=10,
+                on_hold_tests=2,
+                not_reportable_tests=1,
+                sla_breach_tests=3,
+                on_hold_ratio=0.2,
+                not_reportable_ratio=0.1,
+                sla_breach_ratio=0.3,
+            )
+        ],
+        alerts=[
+            CustomerAlertItem(
+                customer_id=1,
+                customer_name="Acme Labs",
+                orders_total=5,
+                orders_on_hold=1,
+                orders_beyond_sla=1,
+                tests_total=10,
+                tests_on_hold=2,
+                tests_not_reportable=1,
+                tests_beyond_sla=3,
+                primary_reason="tests_beyond_sla",
+                primary_ratio=0.3,
+                latest_activity_at=datetime(2025, 10, 6, 12, 0, 0),
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_customer_alerts",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/customers/alerts")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["alerts"][0]["customer_name"] == "Acme Labs"
+    assert data["heatmap"][0]["on_hold_tests"] == 2
+
+
+def test_tests_state_distribution_endpoint(monkeypatch):
+    response_payload = TestsStateDistributionResponse(
+        interval="week",
+        states=["ON HOLD", "REPORTED"],
+        series=[
+            TestStatePoint(
+                period_start=date(2025, 10, 6),
+                total_tests=6,
+                buckets=[
+                    TestStateBucket(state="ON HOLD", count=2, ratio=0.3333),
+                    TestStateBucket(state="REPORTED", count=4, ratio=0.6667),
+                ],
+            )
+        ],
+        totals=[
+            TestStateBucket(state="ON HOLD", count=2, ratio=0.3333),
+            TestStateBucket(state="REPORTED", count=4, ratio=0.6667),
+        ],
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_tests_state_distribution",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/tests/state-distribution")
+    assert resp.status_code == 200
+    assert resp.json()["states"] == ["ON HOLD", "REPORTED"]
+
+
+def test_quality_kpis_endpoint(monkeypatch):
+    response_payload = QualityKpisResponse(
+        sla_hours=48.0,
+        tests=QualityKpiTests(
+            total_tests=20,
+            on_hold_tests=3,
+            not_reportable_tests=1,
+            cancelled_tests=2,
+            reported_tests=10,
+            within_sla_tests=12,
+            beyond_sla_tests=8,
+            on_hold_ratio=0.15,
+            not_reportable_ratio=0.05,
+            beyond_sla_ratio=0.4,
+        ),
+        orders=QualityKpiOrders(
+            total_orders=8,
+            on_hold_orders=1,
+            completed_orders=6,
+            within_sla_orders=5,
+            beyond_sla_orders=3,
+            on_hold_ratio=0.125,
+            beyond_sla_ratio=0.375,
+        ),
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_quality_kpis",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/kpis/quality")
+    assert resp.status_code == 200
+    assert resp.json()["tests"]["total_tests"] == 20
+    assert resp.json()["orders"]["beyond_sla_ratio"] == 0.375
 
 
 def test_get_sample_detail(monkeypatch):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Sequence
 
 from PySide6 import QtCharts, QtCore, QtGui, QtWidgets
 
@@ -312,3 +312,175 @@ class TableCard(QtWidgets.QFrame):
                 item = QtWidgets.QTableWidgetItem(str(value))
                 item.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled | QtCore.Qt.ItemFlag.ItemIsSelectable)
                 self.table.setItem(row_index, col_index, item)
+
+
+def _ratio_color(ratio: float) -> QtGui.QColor:
+    ratio = max(0.0, min(float(ratio), 1.0))
+    color = QtGui.QColor()
+    saturation = int(200 * ratio)
+    value = 255 - int(80 * ratio)
+    color.setHsv(0, saturation, value)
+    return color
+
+
+class QualityHeatmapCard(QtWidgets.QFrame):
+    """Heatmap table showing quality ratios over time."""
+
+    def __init__(self, title: str, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("Card")
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        title_label = QtWidgets.QLabel(title, self)
+        title_label.setObjectName("SubtitleLabel")
+        layout.addWidget(title_label)
+
+        self.table = QtWidgets.QTableWidget(self)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.table)
+
+    def update_data(self, points: Sequence[dict]) -> None:
+        customers = {}
+        periods: list[date] = []
+        for point in points:
+            period = point.get("period_start")
+            customer_id = point.get("customer_id")
+            if not period or customer_id is None:
+                continue
+            customers.setdefault(customer_id, {"name": point.get("customer_name"), "data": {}})
+            customers[customer_id]["data"][period] = point
+            if period not in periods:
+                periods.append(period)
+
+        periods.sort()
+        customer_rows = sorted(customers.items(), key=lambda item: (item[1]["name"] or "").lower())
+
+        column_count = 1 + len(periods)
+        self.table.setColumnCount(column_count)
+        headers = ["Customer"] + [period.strftime("%Y-%m-%d") for period in periods]
+        self.table.setHorizontalHeaderLabels(headers)
+        self.table.setRowCount(len(customer_rows))
+
+        for row_index, (customer_id, info) in enumerate(customer_rows):
+            name = info.get("name") or f"Customer {customer_id}"
+            first_item = QtWidgets.QTableWidgetItem(name)
+            first_item.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
+            self.table.setItem(row_index, 0, first_item)
+
+            for col_index, period in enumerate(periods, start=1):
+                point = info["data"].get(period)
+                item = QtWidgets.QTableWidgetItem("--")
+                item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+                item.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
+                if point:
+                    total = int(point.get("total_tests") or 0)
+                    on_hold = int(point.get("on_hold_tests") or 0)
+                    not_reportable = int(point.get("not_reportable_tests") or 0)
+                    beyond_sla = int(point.get("sla_breach_tests") or 0)
+                    max_ratio = max(
+                        float(point.get("on_hold_ratio") or 0.0),
+                        float(point.get("not_reportable_ratio") or 0.0),
+                        float(point.get("sla_breach_ratio") or 0.0),
+                    )
+                    if total > 0:
+                        item.setText(
+                            f"{total}\nOH {on_hold / total:.0%} | NR {not_reportable / total:.0%}"
+                        )
+                        tooltip = (
+                            f"Total tests: {total}\n"
+                            f"ON HOLD: {on_hold} ({float(point.get('on_hold_ratio') or 0.0):.1%})\n"
+                            f"NOT REPORTABLE: {not_reportable} ({float(point.get('not_reportable_ratio') or 0.0):.1%})\n"
+                            f"Beyond SLA: {beyond_sla} ({float(point.get('sla_breach_ratio') or 0.0):.1%})"
+                        )
+                        item.setToolTip(tooltip)
+                    color = _ratio_color(max_ratio)
+                    item.setBackground(QtGui.QBrush(color))
+                self.table.setItem(row_index, col_index, item)
+
+        self.table.resizeColumnsToContents()
+        if self.table.horizontalHeader().sectionSize(0) > 220:
+            self.table.horizontalHeader().resizeSection(0, 220)
+
+
+STATE_COLORS = {
+    "ON HOLD": "#F85149",
+    "NOT REPORTABLE": "#FF9B44",
+    "IN PROGRESS": "#4C6EF5",
+    "NOT STARTED": "#8D96B4",
+    "COMPLETED": "#7EE787",
+    "REPORTED": "#2EA043",
+    "CANCELLED": "#9E9E9E",
+    "CLIENT CANCELLED": "#BC8CFF",
+    "UNKNOWN": "#6E7681",
+}
+
+
+class TestsStateStackedBarChart(ChartCard):
+    """Stacked bar chart displaying tests by state over time."""
+
+    def __init__(self, title: str = "Tests by State", parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(title, parent)
+        self.chart.removeAllSeries()
+
+        self.series = QtCharts.QStackedBarSeries()
+        self.series.setBarWidth(0.6)
+        self.chart.addSeries(self.series)
+
+        self.categories_axis = QtCharts.QBarCategoryAxis()
+        self.categories_axis.setLabelsColor(QtGui.QColor("white"))
+        self.categories_axis.setTitleText("Periodo")
+        self.chart.addAxis(self.categories_axis, QtCore.Qt.AlignmentFlag.AlignBottom)
+        self.series.attachAxis(self.categories_axis)
+
+        self.value_axis = QtCharts.QValueAxis()
+        self.value_axis.setLabelFormat("%d")
+        self.value_axis.setTitleText("Tests")
+        self.value_axis.setLabelsColor(QtGui.QColor("white"))
+        self.value_axis.setTitleBrush(QtGui.QBrush(QtGui.QColor("white")))
+        self.chart.addAxis(self.value_axis, QtCore.Qt.AlignmentFlag.AlignLeft)
+        self.series.attachAxis(self.value_axis)
+
+    def update_data(self, series_points: Sequence[dict], states: Sequence[str]) -> None:
+        self.chart.removeSeries(self.series)
+        self.series = QtCharts.QStackedBarSeries()
+        self.series.setBarWidth(0.6)
+
+        state_order = list(states)
+        categories: list[str] = []
+        max_total = 0
+
+        bar_sets: dict[str, QtCharts.QBarSet] = {}
+        for state in state_order:
+            bar_set = QtCharts.QBarSet(state)
+            color = QtGui.QColor(STATE_COLORS.get(state, "#6E7681"))
+            bar_set.setColor(color)
+            bar_set.setBorderColor(color.darker(125))
+            bar_sets[state] = bar_set
+            self.series.append(bar_set)
+
+        for point in series_points:
+            period = point.get("period_start")
+            label = period.strftime("%Y-%m-%d") if isinstance(period, date) else str(period)
+            categories.append(label)
+            buckets = {bucket["state"]: int(bucket.get("count", 0)) for bucket in point.get("buckets", [])}
+            total = 0
+            for state in state_order:
+                value = buckets.get(state, 0)
+                bar_sets[state].append(value)
+                total += value
+            max_total = max(max_total, total)
+
+        self.chart.addSeries(self.series)
+        self.series.attachAxis(self.categories_axis)
+        self.series.attachAxis(self.value_axis)
+
+        self.categories_axis.clear()
+        self.categories_axis.append(categories)
+        self.value_axis.setRange(0, max_total * 1.2 if max_total else 1)

@@ -183,4 +183,83 @@ class ApiClient:
         ]
         return payload
 
+    # Quality & SLA ----------------------------------------------------------
+
+    def fetch_customer_alerts(
+        self,
+        *,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        customer_id: Optional[int] = None,
+        interval: str = "week",
+        sla_hours: float = 48.0,
+        min_alert_percentage: float = 0.1,
+    ) -> Dict[str, Any]:
+        params: Dict[str, Any] = {
+            "interval": interval,
+            "sla_hours": sla_hours,
+            "min_alert_percentage": min_alert_percentage,
+        }
+        if date_from:
+            params["date_from"] = date_from.isoformat()
+        if date_to:
+            params["date_to"] = date_to.isoformat()
+        if customer_id:
+            params["customer_id"] = customer_id
+        response = self._client.get("/analytics/customers/alerts", params=params)
+        response.raise_for_status()
+        payload = response.json()
+        for item in payload.get("heatmap", []):
+            item["period_start"] = _parse_date(item.get("period_start"))
+        for alert in payload.get("alerts", []):
+            alert["latest_activity_at"] = _parse_datetime(alert.get("latest_activity_at"))
+        return payload
+
+    def fetch_tests_state_distribution(
+        self,
+        *,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        customer_id: Optional[int] = None,
+        order_id: Optional[int] = None,
+        interval: str = "week",
+    ) -> Dict[str, Any]:
+        params: Dict[str, Any] = {"interval": interval}
+        if date_from:
+            params["date_from"] = date_from.isoformat()
+        if date_to:
+            params["date_to"] = date_to.isoformat()
+        if customer_id:
+            params["customer_id"] = customer_id
+        if order_id:
+            params["order_id"] = order_id
+        response = self._client.get("/analytics/tests/state-distribution", params=params)
+        response.raise_for_status()
+        payload = response.json()
+        for point in payload.get("series", []):
+            point["period_start"] = _parse_date(point.get("period_start"))
+        return payload
+
+    def fetch_quality_kpis(
+        self,
+        *,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        customer_id: Optional[int] = None,
+        order_id: Optional[int] = None,
+        sla_hours: float = 48.0,
+    ) -> Dict[str, Any]:
+        params: Dict[str, Any] = {"sla_hours": sla_hours}
+        if date_from:
+            params["date_from"] = date_from.isoformat()
+        if date_to:
+            params["date_to"] = date_to.isoformat()
+        if customer_id:
+            params["customer_id"] = customer_id
+        if order_id:
+            params["order_id"] = order_id
+        response = self._client.get("/analytics/kpis/quality", params=params)
+        response.raise_for_status()
+        return response.json()
+
     # Activity chart expects raw counts from current/previous; helper methods above cover.

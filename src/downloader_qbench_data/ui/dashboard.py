@@ -11,7 +11,15 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from .api_client import ApiClient
 from .styles import GLOBAL_STYLE
-from .widgets import KpiCard, SamplesTestsBarChart, TableCard, TatLineChart, format_hours_to_days
+from .widgets import (
+    KpiCard,
+    QualityHeatmapCard,
+    SamplesTestsBarChart,
+    TableCard,
+    TatLineChart,
+    TestsStateStackedBarChart,
+    format_hours_to_days,
+)
 
 
 @dataclass
@@ -92,11 +100,25 @@ class DashboardWindow(QtWidgets.QMainWindow):
         self.reports_card = KpiCard("Reports")
         self.tat_card = KpiCard("Avg TAT (hrs)")
 
+        # Quality KPI Cards ---------------------------------------------------
+        self.quality_tests_card = KpiCard("Tests")
+        self.quality_on_hold_card = KpiCard("Tests ON HOLD")
+        self.quality_breach_card = KpiCard("Tests > SLA")
+        self.quality_orders_on_hold_card = KpiCard("Orders ON HOLD")
+
         # Charts / Tables -----------------------------------------------------
         self.bar_chart = SamplesTestsBarChart()
         self.new_customers_table = TableCard("New customers", ["ID", "Name", "Created"])
         self.top_customers_table = TableCard("Top customers with tests", ["ID", "Name", "Tests"])
         self.tat_chart = TatLineChart()
+
+        # Quality widgets -----------------------------------------------------
+        self.quality_heatmap = QualityHeatmapCard("Critical states heatmap")
+        self.quality_state_chart = TestsStateStackedBarChart("Tests by state")
+        self.quality_alerts_table = TableCard(
+            "Customer alerts",
+            ["Customer", "Orders", "Tests", "Primary alert", "Ratio", "Latest activity"],
+        )
 
         # Summary label -------------------------------------------------------
         self.last_update_label = QtWidgets.QLabel("", self)
@@ -121,34 +143,18 @@ class DashboardWindow(QtWidgets.QMainWindow):
         main_layout.addLayout(filter_layout)
         main_layout.addWidget(self.last_update_label)
 
-        # KPI row
-        kpi_layout = QtWidgets.QHBoxLayout()
-        kpi_layout.setSpacing(16)
-        for card in (self.samples_card, self.tests_card, self.customers_card, self.reports_card, self.tat_card):
-            card.setMinimumWidth(150)
-            kpi_layout.addWidget(card)
-        main_layout.addLayout(kpi_layout)
+        # Tabs ----------------------------------------------------------------
+        self.tabs = QtWidgets.QTabWidget(self)
+        self.tabs.setObjectName("DashboardTabs")
+        main_layout.addWidget(self.tabs, 1)
 
-        # Bar chart row
-        main_layout.addWidget(self.bar_chart)
+        self.operational_tab = self._build_operational_tab()
+        self.tabs.addTab(self.operational_tab, "Operational Efficiency")
 
-        # Tables row
-        tables_layout = QtWidgets.QHBoxLayout()
-        tables_layout.setSpacing(16)
-        tables_layout.addWidget(self.new_customers_table)
-        tables_layout.addWidget(self.top_customers_table)
-        main_layout.addLayout(tables_layout)
+        self.quality_tab = self._build_quality_tab()
+        self.tabs.addTab(self.quality_tab, "Quality & SLA Monitor")
 
-        # TAT chart
-        self.tat_chart.setMinimumHeight(320)
-        main_layout.addWidget(self.tat_chart)
-        main_layout.addStretch(1)
-
-        # Scroll area setup
-        scroll_area = QtWidgets.QScrollArea(self)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(container)
-        self.setCentralWidget(scroll_area)
+        self.setCentralWidget(container)
 
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Loading data…")
@@ -156,6 +162,66 @@ class DashboardWindow(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(100, self.reload_data)
 
     # ------------------------------------------------------------------ API --
+
+    def _build_operational_tab(self) -> QtWidgets.QWidget:
+        content = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(content)
+        layout.setSpacing(16)
+
+        kpi_layout = QtWidgets.QHBoxLayout()
+        kpi_layout.setSpacing(16)
+        for card in (self.samples_card, self.tests_card, self.customers_card, self.reports_card, self.tat_card):
+            card.setMinimumWidth(150)
+            kpi_layout.addWidget(card)
+        layout.addLayout(kpi_layout)
+
+        layout.addWidget(self.bar_chart)
+
+        tables_layout = QtWidgets.QHBoxLayout()
+        tables_layout.setSpacing(16)
+        tables_layout.addWidget(self.new_customers_table)
+        tables_layout.addWidget(self.top_customers_table)
+        layout.addLayout(tables_layout)
+
+        self.tat_chart.setMinimumHeight(320)
+        layout.addWidget(self.tat_chart)
+        layout.addStretch(1)
+
+        scroll = QtWidgets.QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(content)
+        return scroll
+
+    def _build_quality_tab(self) -> QtWidgets.QWidget:
+        content = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(content)
+        layout.setSpacing(16)
+
+        kpi_layout = QtWidgets.QHBoxLayout()
+        kpi_layout.setSpacing(16)
+        for card in (
+            self.quality_tests_card,
+            self.quality_on_hold_card,
+            self.quality_breach_card,
+            self.quality_orders_on_hold_card,
+        ):
+            card.setMinimumWidth(150)
+            kpi_layout.addWidget(card)
+        layout.addLayout(kpi_layout)
+
+        charts_layout = QtWidgets.QHBoxLayout()
+        charts_layout.setSpacing(16)
+        charts_layout.addWidget(self.quality_heatmap)
+        charts_layout.addWidget(self.quality_state_chart)
+        layout.addLayout(charts_layout)
+
+        layout.addWidget(self.quality_alerts_table)
+        layout.addStretch(1)
+
+        scroll = QtWidgets.QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(content)
+        return scroll
 
     def _current_date_range(self) -> tuple[date, date]:
         start = self.date_from_edit.date().toPython()
@@ -196,6 +262,24 @@ class DashboardWindow(QtWidgets.QMainWindow):
         self._run_api(
             self.api_client.fetch_tat_daily,
             self._handle_tat_daily,
+            date_from=start,
+            date_to=end,
+        )
+        self._run_api(
+            self.api_client.fetch_customer_alerts,
+            self._handle_customer_alerts,
+            date_from=start,
+            date_to=end,
+        )
+        self._run_api(
+            self.api_client.fetch_tests_state_distribution,
+            self._handle_tests_state_distribution,
+            date_from=start,
+            date_to=end,
+        )
+        self._run_api(
+            self.api_client.fetch_quality_kpis,
+            self._handle_quality_kpis,
             date_from=start,
             date_to=end,
         )
@@ -277,6 +361,64 @@ class DashboardWindow(QtWidgets.QMainWindow):
             if item.get("period_start") and item.get("value") is not None
         )
         self.tat_chart.update_data(points, moving)
+
+    def _handle_customer_alerts(self, payload: dict) -> None:
+        heatmap_points = payload.get("heatmap", [])
+        self.quality_heatmap.update_data(heatmap_points)
+
+        alerts = payload.get("alerts", [])
+        rows = []
+        for alert in alerts:
+            customer = alert.get("customer_name") or f"Customer {alert.get('customer_id')}"
+            orders_total = alert.get("orders_total", 0)
+            orders_on_hold = alert.get("orders_on_hold", 0)
+            tests_total = alert.get("tests_total", 0)
+            tests_on_hold = alert.get("tests_on_hold", 0)
+            tests_not_reportable = alert.get("tests_not_reportable", 0)
+            tests_beyond_sla = alert.get("tests_beyond_sla", 0)
+            primary_reason = alert.get("primary_reason", "")
+            primary_ratio = alert.get("primary_ratio", 0.0)
+            latest = alert.get("latest_activity_at")
+            latest_str = latest.strftime("%Y-%m-%d %H:%M") if isinstance(latest, datetime) else ""
+            tests_summary = f"{tests_total} (OH {tests_on_hold}, NR {tests_not_reportable}, >SLA {tests_beyond_sla})"
+            orders_summary = f"{orders_total} (OH {orders_on_hold})"
+            rows.append(
+                (
+                    customer,
+                    orders_summary,
+                    tests_summary,
+                    primary_reason.replace("_", " ").title(),
+                    f"{primary_ratio:.1%}",
+                    latest_str,
+                )
+            )
+        self.quality_alerts_table.update_rows(rows)
+
+    def _handle_tests_state_distribution(self, payload: dict) -> None:
+        states = payload.get("states", [])
+        series = payload.get("series", [])
+        self.quality_state_chart.update_data(series, states)
+
+    def _handle_quality_kpis(self, payload: dict) -> None:
+        tests = payload.get("tests", {})
+        orders = payload.get("orders", {})
+
+        def _fmt_ratio(value: Optional[float]) -> str:
+            return f"{value:.1%}" if value is not None else "--"
+
+        self.quality_tests_card.update_value(str(tests.get("total_tests", "--")))
+        self.quality_on_hold_card.update_value(
+            str(tests.get("on_hold_tests", "--")),
+            caption=f"{_fmt_ratio(tests.get('on_hold_ratio'))} of tests",
+        )
+        self.quality_breach_card.update_value(
+            str(tests.get("beyond_sla_tests", "--")),
+            caption=f"{_fmt_ratio(tests.get('beyond_sla_ratio'))} of tests",
+        )
+        self.quality_orders_on_hold_card.update_value(
+            str(orders.get("on_hold_orders", "--")),
+            caption=f"{_fmt_ratio(orders.get('on_hold_ratio'))} of orders",
+        )
 
     def _handle_error(self, error: Exception) -> None:  # pragma: no cover - UI feedback
         self.status_bar.showMessage(f"Failed to update dashboard: {error}", 5000)
