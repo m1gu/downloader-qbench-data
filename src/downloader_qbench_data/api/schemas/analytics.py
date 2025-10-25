@@ -217,6 +217,20 @@ class OverdueStateBreakdown(BaseModel):
     ratio: float
 
 
+class ReadyToReportSampleItem(BaseModel):
+    sample_id: int
+    sample_name: Optional[str] = None
+    sample_custom_id: Optional[str] = None
+    order_id: int
+    order_custom_id: Optional[str] = None
+    customer_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    date_created: Optional[datetime] = None
+    completed_date: Optional[datetime] = None
+    tests_ready_count: int = Field(..., description="Number of tests in ready states for the sample")
+    tests_total_count: int = Field(..., description="Total tests associated with the sample")
+
+
 class OverdueOrdersResponse(BaseModel):
     interval: str
     minimum_days_overdue: int
@@ -229,3 +243,4 @@ class OverdueOrdersResponse(BaseModel):
     timeline: list[OverdueTimelinePoint]
     heatmap: list[OverdueHeatmapCell]
     state_breakdown: list[OverdueStateBreakdown]
+    ready_to_report_samples: list[ReadyToReportSampleItem]

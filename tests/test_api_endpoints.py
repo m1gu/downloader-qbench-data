@@ -30,6 +30,7 @@ from downloader_qbench_data.api.schemas import (
     OverdueOrdersResponse,
     OverdueStateBreakdown,
     OverdueTimelinePoint,
+    ReadyToReportSampleItem,
     QualityKpiOrders,
     QualityKpiTests,
     QualityKpisResponse,
@@ -477,6 +478,21 @@ def test_orders_overdue_endpoint(monkeypatch):
             OverdueStateBreakdown(state="ON HOLD", count=8, ratio=0.6667),
             OverdueStateBreakdown(state="IN PROGRESS", count=4, ratio=0.3333),
         ],
+        ready_to_report_samples=[
+            ReadyToReportSampleItem(
+                sample_id=9001,
+                sample_name="Sample R",
+                sample_custom_id="S-9001",
+                order_id=501,
+                order_custom_id="ORD-501",
+                customer_id=42,
+                customer_name="Arcanna LLC",
+                date_created=datetime(2025, 10, 1, 8, 0),
+                completed_date=datetime(2025, 10, 5, 12, 0),
+                tests_ready_count=3,
+                tests_total_count=3,
+            )
+        ],
     )
     monkeypatch.setattr(
         "downloader_qbench_data.api.routers.analytics.get_overdue_orders",
@@ -488,6 +504,7 @@ def test_orders_overdue_endpoint(monkeypatch):
     body = resp.json()
     assert body["kpis"]["total_overdue"] == 12
     assert body["top_orders"][0]["order_id"] == 501
+    assert body["ready_to_report_samples"][0]["sample_custom_id"] == "S-9001"
 
 
 def test_customers_alerts_endpoint(monkeypatch):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable, Optional, Tuple
 
 from sqlalchemy import case, func, literal, or_, select
@@ -26,6 +26,7 @@ from ..schemas.analytics import (
     OverdueOrdersResponse,
     OverdueStateBreakdown,
     OverdueTimelinePoint,
+    ReadyToReportSampleItem,
     QualityKpiOrders,
     QualityKpiTests,
     QualityKpisResponse,
@@ -632,6 +633,71 @@ def get_overdue_orders(
         overdue_within_sla=within_sla,
     )
 
+    reference_dt = date_to if date_to else datetime.utcnow()
+    if reference_dt.tzinfo is not None:
+        reference_dt = reference_dt.astimezone(timezone.utc).replace(tzinfo=None)
+    window_start = reference_dt - timedelta(days=30)
+
+    ready_states = ("COMPLETED", "NOT REPORTABLE")
+    ready_state_case = case((Test.state.in_(ready_states), 1), else_=0)
+    ready_tests_subq = (
+        select(
+            Test.sample_id.label("sample_id"),
+            func.count(Test.id).label("total_tests"),
+            func.sum(ready_state_case).label("ready_tests"),
+        )
+        .group_by(Test.sample_id)
+        .having(func.sum(ready_state_case) == func.count(Test.id))
+        .subquery()
+    )
+
+    sample_conditions = [
+        Sample.date_created.isnot(None),
+        Sample.date_created >= window_start,
+        Sample.date_created <= reference_dt,
+        Sample.has_report.is_(False),
+        or_(Order.state.is_(None), Order.state.notin_(("COMPLETED", "REPORTED"))),
+    ]
+
+    ready_samples_stmt = (
+        select(
+            Sample.id.label("sample_id"),
+            Sample.sample_name,
+            Sample.custom_formatted_id.label("sample_custom_id"),
+            Sample.order_id,
+            Order.custom_formatted_id.label("order_custom_id"),
+            Order.customer_account_id.label("customer_id"),
+            Customer.name.label("customer_name"),
+            Sample.date_created,
+            Sample.completed_date,
+            ready_tests_subq.c.ready_tests,
+            ready_tests_subq.c.total_tests,
+        )
+        .select_from(Sample)
+        .join(Order, Order.id == Sample.order_id)
+        .join(Customer, Customer.id == Order.customer_account_id, isouter=True)
+        .join(ready_tests_subq, ready_tests_subq.c.sample_id == Sample.id)
+        .where(*sample_conditions)
+        .order_by(Sample.date_created.asc())
+    )
+
+    ready_samples = [
+        ReadyToReportSampleItem(
+            sample_id=row.sample_id,
+            sample_name=row.sample_name,
+            sample_custom_id=row.sample_custom_id,
+            order_id=row.order_id,
+            order_custom_id=row.order_custom_id,
+            customer_id=row.customer_id,
+            customer_name=row.customer_name,
+            date_created=row.date_created,
+            completed_date=row.completed_date,
+            tests_ready_count=int(row.ready_tests or 0),
+            tests_total_count=int(row.total_tests or 0),
+        )
+        for row in session.execute(ready_samples_stmt)
+    ]
+
     return OverdueOrdersResponse(
         interval=interval_value,
         minimum_days_overdue=minimum_days,
@@ -644,6 +710,7 @@ def get_overdue_orders(
         timeline=timeline,
         heatmap=heatmap,
         state_breakdown=breakdown,
+        ready_to_report_samples=ready_samples,
     )
 
 
