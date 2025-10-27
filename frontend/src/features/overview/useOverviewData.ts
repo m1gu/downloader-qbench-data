@@ -14,23 +14,38 @@ const initialState: UseOverviewDataState = {
   error: null,
 }
 
+const overviewCache = new Map<string, OverviewData>()
+
 export function useOverviewData(filters: OverviewFilters) {
-  const [{ data, loading, error }, setState] = React.useState<UseOverviewDataState>(initialState)
+  const cacheKey = React.useMemo(() => JSON.stringify(filters), [filters])
+  const [state, setState] = React.useState<UseOverviewDataState>(() => {
+    const cached = overviewCache.get(cacheKey)
+    if (cached) {
+      return { data: cached, loading: false, error: null }
+    }
+    return initialState
+  })
 
   const refresh = React.useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
     try {
       const response = await fetchOverviewData(filters)
+      overviewCache.set(cacheKey, response)
       setState({ data: response, loading: false, error: null })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
-      setState({ data: null, loading: false, error: message })
+      setState((prev) => ({ data: prev.data, loading: false, error: message }))
     }
-  }, [filters])
+  }, [cacheKey, filters])
 
   React.useEffect(() => {
+    const cached = overviewCache.get(cacheKey)
+    if (cached) {
+      setState({ data: cached, loading: false, error: null })
+      return
+    }
     void refresh()
-  }, [refresh])
+  }, [cacheKey, refresh])
 
-  return { data, loading, error, refresh }
+  return { ...state, refresh }
 }

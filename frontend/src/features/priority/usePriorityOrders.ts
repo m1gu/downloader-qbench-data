@@ -14,13 +14,23 @@ const initialState: PriorityState = {
   error: null,
 }
 
+const priorityCache = new Map<string, PriorityOrdersData>()
+
 export function usePriorityOrders(filters: PriorityFilters) {
-  const [state, setState] = React.useState<PriorityState>(initialState)
+  const cacheKey = React.useMemo(() => JSON.stringify(filters), [filters])
+  const [state, setState] = React.useState<PriorityState>(() => {
+    const cached = priorityCache.get(cacheKey)
+    if (cached) {
+      return { data: cached, loading: false, error: null }
+    }
+    return initialState
+  })
 
   const refresh = React.useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
     try {
       const response = await fetchPriorityOrders(filters)
+      priorityCache.set(cacheKey, response)
       setState({
         data: response,
         loading: false,
@@ -28,17 +38,22 @@ export function usePriorityOrders(filters: PriorityFilters) {
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
-      setState({
-        data: null,
+      setState((prev) => ({
+        data: prev.data,
         loading: false,
         error: message,
-      })
+      }))
     }
-  }, [filters])
+  }, [cacheKey, filters])
 
   React.useEffect(() => {
+    const cached = priorityCache.get(cacheKey)
+    if (cached) {
+      setState({ data: cached, loading: false, error: null })
+      return
+    }
     void refresh()
-  }, [refresh])
+  }, [cacheKey, refresh])
 
   return { ...state, refresh }
 }

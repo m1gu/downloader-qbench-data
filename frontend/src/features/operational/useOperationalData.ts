@@ -14,13 +14,23 @@ const initialState: OperationalState = {
   error: null,
 }
 
+const operationalCache = new Map<string, OperationalData>()
+
 export function useOperationalData(filters: OperationalFilters) {
-  const [state, setState] = React.useState<OperationalState>(initialState)
+  const cacheKey = React.useMemo(() => JSON.stringify(filters), [filters])
+  const [state, setState] = React.useState<OperationalState>(() => {
+    const cached = operationalCache.get(cacheKey)
+    if (cached) {
+      return { data: cached, loading: false, error: null }
+    }
+    return initialState
+  })
 
   const refresh = React.useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
     try {
       const response = await fetchOperationalData(filters)
+      operationalCache.set(cacheKey, response)
       setState({
         data: response,
         loading: false,
@@ -28,17 +38,22 @@ export function useOperationalData(filters: OperationalFilters) {
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
-      setState({
-        data: null,
+      setState((prev) => ({
+        data: prev.data,
         loading: false,
         error: message,
-      })
+      }))
     }
-  }, [filters])
+  }, [cacheKey, filters])
 
   React.useEffect(() => {
+    const cached = operationalCache.get(cacheKey)
+    if (cached) {
+      setState({ data: cached, loading: false, error: null })
+      return
+    }
     void refresh()
-  }, [refresh])
+  }, [cacheKey, refresh])
 
   return { ...state, refresh }
 }

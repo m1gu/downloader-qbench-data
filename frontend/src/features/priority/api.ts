@@ -48,6 +48,7 @@ interface OverdueOrdersResponse {
     sample_name: string | null
     order_custom_id: string | null
     customer_name: string | null
+    completed_date: string | null
     tests_ready_count: number
     tests_total_count: number
   }>
@@ -90,7 +91,8 @@ function buildKpis(response: OverdueOrdersResponse): PriorityKpis {
   }
 }
 
-function mapOrders(entries: OverdueOrdersResponse['top_orders']): OverdueOrder[] {
+function mapOrders(entries: OverdueOrdersResponse['top_orders'], slaHours: number): OverdueOrder[] {
+  const threshold = Number.isFinite(slaHours) ? slaHours : Number.POSITIVE_INFINITY
   return entries.map((item) => ({
     id: item.order_id,
     reference: item.custom_formatted_id || `Order ${item.order_id}`,
@@ -98,10 +100,12 @@ function mapOrders(entries: OverdueOrdersResponse['top_orders']): OverdueOrder[]
     state: toTitleCase(item.state),
     createdAt: item.date_created ? parseISO(item.date_created) : null,
     openHours: item.open_hours,
+    slaBreached: item.open_hours > threshold,
   }))
 }
 
-function mapWarnings(entries: OverdueOrdersResponse['warning_orders']): WarningOrder[] {
+function mapWarnings(entries: OverdueOrdersResponse['warning_orders'], slaHours: number): WarningOrder[] {
+  const threshold = Number.isFinite(slaHours) ? slaHours : Number.POSITIVE_INFINITY
   return entries.map((item) => ({
     id: item.order_id,
     reference: item.custom_formatted_id || `Order ${item.order_id}`,
@@ -109,6 +113,7 @@ function mapWarnings(entries: OverdueOrdersResponse['warning_orders']): WarningO
     state: toTitleCase(item.state),
     createdAt: item.date_created ? parseISO(item.date_created) : null,
     openHours: item.open_hours,
+    slaBreached: item.open_hours > threshold,
   }))
 }
 
@@ -118,6 +123,7 @@ function mapReadySamples(entries: OverdueOrdersResponse['ready_to_report_samples
     name: item.sample_name || `Sample ${item.sample_id}`,
     orderReference: item.order_custom_id || '--',
     customer: item.customer_name || '--',
+    completedAt: item.completed_date ? parseISO(item.completed_date) : null,
     testsDone: item.tests_ready_count,
     testsTotal: item.tests_total_count,
   }))
@@ -197,8 +203,8 @@ export async function fetchPriorityOrders(filters: PriorityFilters): Promise<Pri
 
   return {
     kpis: buildKpis(response),
-    topOrders: mapOrders(response.top_orders),
-    warningOrders: mapWarnings(response.warning_orders),
+    topOrders: mapOrders(response.top_orders, response.sla_hours),
+    warningOrders: mapWarnings(response.warning_orders, response.sla_hours),
     readySamples: mapReadySamples(response.ready_to_report_samples),
     timeline: mapTimeline(response.timeline),
     heatmap: mapHeatmap(response.heatmap),

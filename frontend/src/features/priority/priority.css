@@ -1,3 +1,83 @@
+.priority__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.priority__control-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.priority__meta-label strong {
+  color: var(--color-text-primary);
+}
+
+.priority__control-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.priority__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.priority__field input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: var(--color-text-primary);
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  min-width: 120px;
+}
+
+.priority__field input:focus {
+  outline: none;
+  border-color: rgba(121, 162, 255, 0.6);
+  box-shadow: 0 0 0 2px rgba(121, 162, 255, 0.2);
+}
+
+.priority__refresh {
+  background: linear-gradient(120deg, #4c6ef5 0%, #7c5dff 100%);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  padding: 12px 24px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.priority__refresh:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.priority__refresh:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(76, 110, 245, 0.35);
+}
+
+.priority__kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
 .priority__grid {
   display: grid;
   gap: 24px;
@@ -37,4 +117,25 @@
   font-size: 0.85rem;
   letter-spacing: 0.01em;
   color: var(--color-text-primary);
+}
+
+.priority__order-row--breach {
+  background: rgba(249, 115, 147, 0.08);
+}
+
+.priority__sla-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.priority__sla-chip--breach {
+  background: rgba(249, 115, 147, 0.18);
+  color: #ff7b9e;
 }

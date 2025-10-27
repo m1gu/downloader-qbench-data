@@ -24,6 +24,7 @@ export interface OverdueOrder {
   state: string
   createdAt: Date | null
   openHours: number
+  slaBreached: boolean
 }
 
 export interface WarningOrder extends OverdueOrder {}
@@ -33,6 +34,7 @@ export interface ReadySample {
   name: string
   orderReference: string
   customer: string
+  completedAt: Date | null
   testsDone: number
   testsTotal: number
 }

@@ -1,257 +1,151 @@
 import { parseISO, subDays } from 'date-fns'
 import * as React from 'react'
-import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ResponsiveHeatMap } from '@nivo/heatmap'
 import type { DefaultHeatMapDatum, HeatMapSerie, TooltipProps } from '@nivo/heatmap'
 import { formatDateInput, formatDateLabel, formatDateTimeLabel, formatHoursToDuration, formatNumber } from '../../utils/format'
-import '../overview/overview.css'
-import '../operational/operational.css'
-import './priority.css'
-import type { IntervalOption, PriorityFilters } from './types'
+import type { PriorityFilters } from './types'
 import { usePriorityOrders } from './usePriorityOrders'
+import './priority.css'
+import '../overview/overview.css'
 
-const INTERVAL_OPTIONS: Array<{ value: IntervalOption; label: string }> = [
-  { value: 'day', label: 'Daily' },
-  { value: 'week', label: 'Weekly' },
-]
-
+const LOOKBACK_DAYS = 30
 const DEFAULT_MIN_DAYS = 5
 const DEFAULT_SLA_HOURS = 240
-const PRIORITY_LOOKBACK_DAYS = 30
 
-function createInitialFilters(): PriorityFilters {
-  const now = new Date()
-  const utcToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-  const from = subDays(utcToday, PRIORITY_LOOKBACK_DAYS)
+type FormState = Pick<PriorityFilters, 'minDaysOverdue' | 'slaHours'>
+
+function computeRange() {
+  const today = new Date()
+  const start = subDays(today, LOOKBACK_DAYS - 1)
   return {
-    dateFrom: formatDateInput(from),
-    dateTo: formatDateInput(utcToday),
-    interval: 'day',
-    minDaysOverdue: DEFAULT_MIN_DAYS,
-    slaHours: DEFAULT_SLA_HOURS,
+    from: formatDateInput(start),
+    to: formatDateInput(today),
   }
 }
 
 export function PriorityOrdersTab() {
-  const initialFilters = React.useMemo(createInitialFilters, [])
-  const [formFilters, setFormFilters] = React.useState<PriorityFilters>(initialFilters)
-  const [filters, setFilters] = React.useState<PriorityFilters>(initialFilters)
-
+  const initialRange = React.useMemo(computeRange, [])
+  const [formState, setFormState] = React.useState<FormState>({
+    minDaysOverdue: DEFAULT_MIN_DAYS,
+    slaHours: DEFAULT_SLA_HOURS,
+  })
+  const [filters, setFilters] = React.useState<PriorityFilters>({
+    dateFrom: initialRange.from,
+    dateTo: initialRange.to,
+    interval: 'day',
+    minDaysOverdue: DEFAULT_MIN_DAYS,
+    slaHours: DEFAULT_SLA_HOURS,
+  })
   const { data, loading, error, refresh } = usePriorityOrders(filters)
+  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
 
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  React.useEffect(() => {
+    if (data) {
+      setLastUpdated(new Date())
+    }
+  }, [data])
+
+  const applyFilters = React.useCallback(() => {
+    const range = computeRange()
+    const nextFilters: PriorityFilters = {
+      dateFrom: range.from,
+      dateTo: range.to,
+      interval: 'day',
+      minDaysOverdue: formState.minDaysOverdue,
+      slaHours: formState.slaHours,
+    }
+
+    const unchanged =
+      filters.dateFrom === nextFilters.dateFrom &&
+      filters.dateTo === nextFilters.dateTo &&
+      filters.minDaysOverdue === nextFilters.minDaysOverdue &&
+      filters.slaHours === nextFilters.slaHours
+
+    if (unchanged) {
+      void refresh()
+    } else {
+      setFilters(nextFilters)
+    }
+  }, [filters, formState.minDaysOverdue, formState.slaHours, refresh])
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
-    setFormFilters((prev) => ({
+    const parsed = Number.parseInt(value || '0', 10)
+    setFormState((prev) => ({
       ...prev,
-      [name]:
-        name === 'minDaysOverdue' || name === 'slaHours'
-          ? Number.parseInt(value || '0', 10)
-          : value,
+      [name]: Number.isNaN(parsed) ? prev[name as keyof FormState] : parsed,
     }))
   }
 
-  const handleRefresh = () => {
-    const isSame =
-      formFilters.dateFrom === filters.dateFrom &&
-      formFilters.dateTo === filters.dateTo &&
-      formFilters.interval === filters.interval &&
-      formFilters.minDaysOverdue === filters.minDaysOverdue &&
-      formFilters.slaHours === filters.slaHours
-
-    if (isSame) {
-      void refresh()
-    } else {
-      setFilters(formFilters)
-    }
-  }
-
-  const timeline = data?.timeline ?? []
-  const heatmap = data?.heatmap
-
-  const heatmapKeys = React.useMemo(() => (heatmap ? [...heatmap.periods] : []), [heatmap])
+  const heatmapData = React.useMemo(() => data?.heatmap ?? { periods: [], customers: [] }, [data])
+  const heatmapKeys = React.useMemo(() => [...heatmapData.periods], [heatmapData.periods])
   const heatmapRows = React.useMemo(() => {
-    if (!heatmap || !heatmap.customers.length) {
-      return [] as HeatMapSerie<DefaultHeatMapDatum, Record<string, never>>[]
-    }
-    const rows = heatmap.customers.map((customer) => {
-      return {
-        id: customer.customerName,
-        data: heatmapKeys.map((period) => ({
-          x: period,
-          y: customer.data[period] ?? 0,
-        })),
-      }
-    }) as HeatMapSerie<DefaultHeatMapDatum, Record<string, never>>[]
-    return rows
-  }, [heatmap, heatmapKeys])
+    if (!heatmapData.customers.length) return [] as HeatMapSerie<DefaultHeatMapDatum, Record<string, never>>[]
+    return heatmapData.customers.map((customer) => ({
+      id: customer.customerName,
+      data: heatmapKeys.map((period) => ({
+        x: period,
+        y: customer.data[period] ?? 0,
+      })),
+    })) as HeatMapSerie<DefaultHeatMapDatum, Record<string, never>>[]
+  }, [heatmapData.customers, heatmapKeys])
+
   const hasHeatmap = heatmapRows.length > 0
-
-  const heatmapTheme = React.useMemo(
-    () => ({
-      axis: {
-        ticks: {
-          text: {
-            fill: '#a8b3d1',
-            fontSize: 12,
-          },
-        },
-        legend: {
-          text: {
-            fill: '#a8b3d1',
-            fontSize: 12,
-          },
-        },
-      },
-      legends: {
-        text: {
-          fill: '#a8b3d1',
-          fontSize: 12,
-        },
-      },
-      tooltip: {
-        container: {
-          background: '#0f1d3b',
-          color: '#f4f7ff',
-          fontSize: 12,
-          borderRadius: 12,
-        },
-      },
-    }),
-    [],
-  )
-
-  const HeatmapTooltip: React.FC<TooltipProps<DefaultHeatMapDatum>> = ({ cell }) => (
-    <div className="priority__heatmap-tooltip">
-      <strong>{cell.serieId}</strong>
-      <div>{formatDateLabel(parseISO(String(cell.data.x)))}</div>
-      <div>{cell.value ? `${cell.value} overdue` : 'No overdue orders'}</div>
-    </div>
-  )
+  const rangeLabel = `${filters.dateFrom} - ${filters.dateTo}`
+  const lastUpdatedLabel = lastUpdated ? `${formatDateTimeLabel(lastUpdated)}` : '--'
 
   return (
     <div className="overview">
-      <section className="overview__controls">
-        <div className="overview__control-group">
-          <label className="overview__control">
-            <span>From</span>
-            <input
-              type="date"
-              name="dateFrom"
-              value={formFilters.dateFrom}
-              max={formFilters.dateTo}
-              onChange={handleInputChange}
-            />
-          </label>
-          <label className="overview__control">
-            <span>To</span>
-            <input
-              type="date"
-              name="dateTo"
-              value={formFilters.dateTo}
-              min={formFilters.dateFrom}
-              onChange={handleInputChange}
-            />
-          </label>
-          <label className="overview__control">
-            <span>Interval</span>
-            <select name="interval" value={formFilters.interval} onChange={handleInputChange}>
-              {INTERVAL_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="overview__control">
-            <span>Min days overdue</span>
+      <section className="priority__controls">
+        <div className="priority__control-meta">
+          <span className="priority__meta-label">
+            Range:
+            <strong> {rangeLabel}</strong>
+          </span>
+          <span className="priority__meta-label">
+            Last refresh:
+            <strong> {lastUpdatedLabel}</strong>
+          </span>
+        </div>
+        <div className="priority__control-inputs">
+          <label className="priority__field">
+            <span>Minimum days overdue</span>
             <input
               type="number"
               name="minDaysOverdue"
               min={0}
-              value={formFilters.minDaysOverdue}
+              step={1}
+              value={formState.minDaysOverdue}
               onChange={handleInputChange}
             />
           </label>
-          <label className="overview__control">
-            <span>SLA hours</span>
+          <label className="priority__field">
+            <span>SLA (hours)</span>
             <input
               type="number"
               name="slaHours"
               min={0}
-              value={formFilters.slaHours}
+              step={1}
+              value={formState.slaHours}
               onChange={handleInputChange}
             />
           </label>
-          <button className="overview__refresh-button" type="button" onClick={handleRefresh} disabled={loading}>
+          <button className="priority__refresh" type="button" onClick={applyFilters} disabled={loading}>
             {loading ? 'Refreshing...' : 'Refresh'}
           </button>
-        </div>
-        <div className="overview__status">
-          <span>Interval: {filters.interval === 'week' ? 'Weekly' : 'Daily'}</span>
-          <span>Min overdue: {filters.minDaysOverdue} days</span>
-          <span>SLA: {formatHoursToDuration(filters.slaHours)}</span>
         </div>
       </section>
 
       {error && <div className="overview__error">Failed to load priority orders: {error}</div>}
 
-      <section className="overview__kpis">
-        <KpiCard
-          label="Overdue orders"
-          value={formatNumber(data?.kpis.totalOverdue ?? null)}
-          caption="Orders beyond the minimum overdue days"
-        />
-        <KpiCard
-          label="Beyond SLA"
-          value={formatNumber(data?.kpis.overdueBeyondSla ?? null)}
-          caption="Overdue orders beyond the SLA threshold"
-          accent="alert"
-        />
-        <KpiCard
-          label="Within SLA"
-          value={formatNumber(data?.kpis.overdueWithinSla ?? null)}
-          caption="Overdue but still within SLA"
-        />
-        <KpiCard
-          label="Avg open time"
-          value={formatHoursToDuration(data?.kpis.averageOpenHours ?? null)}
-          caption="Average open hours for overdue orders"
-        />
+      <section className="overview__kpis priority__kpi-grid">
+        <KpiCard label="Overdue orders" value={formatNumber(data?.kpis.totalOverdue ?? null)} />
+        <KpiCard label="Beyond SLA" value={formatNumber(data?.kpis.overdueBeyondSla ?? null)} accent="alert" />
       </section>
 
-      <section className="overview__grid priority__grid">
-        <div className="overview__card overview__card--full">
-          <CardHeader title="Overdue orders timeline" subtitle="Total overdue orders per interval" />
-          <div className="overview__chart">
-            {timeline.length ? (
-              <ResponsiveContainer width="100%" height={320}>
-                <AreaChart data={timeline}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.08)" />
-                  <XAxis dataKey="label" stroke="var(--color-text-secondary)" />
-                  <YAxis stroke="var(--color-text-secondary)" tickLine={false} axisLine={false} />
-                  <Tooltip
-                    contentStyle={{ background: '#0f1d3b', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)' }}
-                    labelStyle={{ color: '#f4f7ff' }}
-                  />
-                  <Legend />
-                  <Area
-                    type="monotone"
-                    dataKey="overdueOrders"
-                    name="Overdue orders"
-                    stroke="#F85149"
-                    fill="rgba(248, 81, 73, 0.45)"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState loading={loading} />
-            )}
-          </div>
-        </div>
-
+      <section className="priority__grid">
         <div className="overview__card">
-          <CardHeader title="Most overdue orders" subtitle="Top orders ranked by open time" />
+          <CardHeader title="Most overdue orders" subtitle={`Top overdue orders for the last ${LOOKBACK_DAYS} days`} />
           <div className="overview__table-wrapper">
             <table>
               <thead>
@@ -259,28 +153,33 @@ export function PriorityOrdersTab() {
                   <th>Order</th>
                   <th>Customer</th>
                   <th>Status</th>
+                  <th>Created</th>
                   <th>Open time</th>
+                  <th>SLA breach</th>
                 </tr>
               </thead>
               <tbody>
                 {data?.topOrders.length ? (
                   data.topOrders.map((order) => (
-                    <tr key={order.id}>
-                      <td className="operational__order-ref">{order.reference}</td>
-                      <td>
-                        <div>{order.customer}</div>
-                        {order.createdAt && (
-                          <div className="operational__table-subtle">
-                            Created {formatDateTimeLabel(order.createdAt)}
-                          </div>
-                        )}
-                      </td>
+                    <tr key={order.id} className={order.slaBreached ? 'priority__order-row--breach' : undefined}>
+                      <td className="priority__order-ref">{order.reference}</td>
+                      <td>{order.customer}</td>
                       <td>{order.state !== '--' ? <span className="priority__state">{order.state}</span> : '--'}</td>
+                      <td>{formatDateTimeLabel(order.createdAt)}</td>
                       <td>{formatHoursToDuration(order.openHours)}</td>
+                      <td>
+                        <span
+                          className={
+                            order.slaBreached ? 'priority__sla-chip priority__sla-chip--breach' : 'priority__sla-chip'
+                          }
+                        >
+                          {order.slaBreached ? 'Yes' : 'No'}
+                        </span>
+                      </td>
                     </tr>
                   ))
                 ) : (
-                  <EmptyTable loading={loading} colSpan={4} />
+                  <EmptyTable loading={loading} colSpan={6} />
                 )}
               </tbody>
             </table>
@@ -288,7 +187,7 @@ export function PriorityOrdersTab() {
         </div>
 
         <div className="overview__card">
-          <CardHeader title="Ready to report samples" subtitle="Samples with tests ready to be reported" />
+          <CardHeader title="Ready to report samples" subtitle="Samples with all tests ready for reporting" />
           <div className="overview__table-wrapper">
             <table>
               <thead>
@@ -296,6 +195,7 @@ export function PriorityOrdersTab() {
                   <th>Sample</th>
                   <th>Order</th>
                   <th>Customer</th>
+                  <th>Completed</th>
                   <th>Tests</th>
                 </tr>
               </thead>
@@ -306,43 +206,14 @@ export function PriorityOrdersTab() {
                       <td>{sample.name}</td>
                       <td className="priority__order-ref">{sample.orderReference}</td>
                       <td>{sample.customer}</td>
+                      <td>{formatDateTimeLabel(sample.completedAt)}</td>
                       <td>
                         {sample.testsDone}/{sample.testsTotal}
                       </td>
                     </tr>
                   ))
                 ) : (
-                  <EmptyTable loading={loading} colSpan={4} />
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="overview__card">
-          <CardHeader title="Warning orders" subtitle="Orders approaching the overdue threshold" />
-          <div className="overview__table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Order</th>
-                  <th>Customer</th>
-                  <th>Status</th>
-                  <th>Age</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data?.warningOrders.length ? (
-                  data.warningOrders.map((order) => (
-                    <tr key={order.id}>
-                      <td className="operational__order-ref">{order.reference}</td>
-                      <td>{order.customer}</td>
-                      <td>{order.state !== '--' ? <span className="priority__state">{order.state}</span> : '--'}</td>
-                      <td>{formatHoursToDuration(order.openHours)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <EmptyTable loading={loading} colSpan={4} />
+                  <EmptyTable loading={loading} colSpan={5} />
                 )}
               </tbody>
             </table>
@@ -350,7 +221,7 @@ export function PriorityOrdersTab() {
         </div>
 
         <div className="overview__card overview__card--full">
-          <CardHeader title="Overdue heatmap" subtitle="Weekly overdue orders by customer" />
+          <CardHeader title="Overdue heatmap (customers × period)" subtitle="Weekly hotspots of overdue orders" />
           <div className="priority__heatmap">
             {hasHeatmap ? (
               <ResponsiveHeatMap
@@ -377,7 +248,6 @@ export function PriorityOrdersTab() {
                 labelTextColor="rgba(255, 255, 255, 0.85)"
                 borderColor="rgba(3, 6, 15, 0.2)"
                 emptyColor="rgba(255, 255, 255, 0.06)"
-                valueFormat={(value) => (value ? `${value}` : '')}
                 theme={heatmapTheme}
                 tooltip={HeatmapTooltip}
                 animate={false}
@@ -392,6 +262,45 @@ export function PriorityOrdersTab() {
     </div>
   )
 }
+
+const heatmapTheme = {
+  axis: {
+    ticks: {
+      text: {
+        fill: '#a8b3d1',
+        fontSize: 12,
+      },
+    },
+    legend: {
+      text: {
+        fill: '#a8b3d1',
+        fontSize: 12,
+      },
+    },
+  },
+  legends: {
+    text: {
+      fill: '#a8b3d1',
+      fontSize: 12,
+    },
+  },
+  tooltip: {
+    container: {
+      background: '#0f1d3b',
+      color: '#f4f7ff',
+      fontSize: 12,
+      borderRadius: 12,
+    },
+  },
+}
+
+const HeatmapTooltip: React.FC<TooltipProps<DefaultHeatMapDatum>> = ({ cell }) => (
+  <div className="priority__heatmap-tooltip">
+    <strong>{cell.serieId}</strong>
+    <div>{formatDateLabel(parseISO(String(cell.data.x)))}</div>
+    <div>{cell.value ? `${cell.value} overdue` : 'No overdue orders'}</div>
+  </div>
+)
 
 type KpiCardProps = {
   label: string
