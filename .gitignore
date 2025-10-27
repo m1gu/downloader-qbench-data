@@ -93,4 +93,4 @@ logs/
 !frontend/*.json
 !frontend/**/*.json
 
-frontend/src/lib/
+!frontend/src/lib/
