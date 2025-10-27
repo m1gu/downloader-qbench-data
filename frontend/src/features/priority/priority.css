@@ -85,6 +85,8 @@
 
 .priority__heatmap {
   height: 360px;
+  width: calc(100% + 48px);
+  margin: 0 -24px;
 }
 
 .priority__heatmap-tooltip {
@@ -138,4 +140,10 @@
 .priority__sla-chip--breach {
   background: rgba(249, 115, 147, 0.18);
   color: #ff7b9e;
+}
+
+.priority__table {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
 }

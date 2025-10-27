@@ -9,8 +9,8 @@ import './priority.css'
 import '../overview/overview.css'
 
 const LOOKBACK_DAYS = 30
-const DEFAULT_MIN_DAYS = 5
-const DEFAULT_SLA_HOURS = 240
+const DEFAULT_MIN_DAYS = 4
+const DEFAULT_SLA_HOURS = 120
 
 type FormState = Pick<PriorityFilters, 'minDaysOverdue' | 'slaHours'>
 
@@ -91,6 +91,13 @@ export function PriorityOrdersTab() {
   }, [heatmapData.customers, heatmapKeys])
 
   const hasHeatmap = heatmapRows.length > 0
+  const heatmapHeight = React.useMemo(() => {
+    if (!heatmapRows.length) return 360
+    const baseHeight = 360
+    const rowHeight = 48
+    const totalRows = heatmapRows.length
+    return Math.max(baseHeight, totalRows * rowHeight)
+  }, [heatmapRows.length])
   const rangeLabel = `${filters.dateFrom} - ${filters.dateTo}`
   const lastUpdatedLabel = lastUpdated ? `${formatDateTimeLabel(lastUpdated)}` : '--'
 
@@ -146,7 +153,7 @@ export function PriorityOrdersTab() {
       <section className="priority__grid">
         <div className="overview__card">
           <CardHeader title="Most overdue orders" subtitle={`Top overdue orders for the last ${LOOKBACK_DAYS} days`} />
-          <div className="overview__table-wrapper">
+          <div className="overview__table-wrapper priority__table">
             <table>
               <thead>
                 <tr>
@@ -188,7 +195,7 @@ export function PriorityOrdersTab() {
 
         <div className="overview__card">
           <CardHeader title="Ready to report samples" subtitle="Samples with all tests ready for reporting" />
-          <div className="overview__table-wrapper">
+          <div className="overview__table-wrapper priority__table">
             <table>
               <thead>
                 <tr>
@@ -222,12 +229,15 @@ export function PriorityOrdersTab() {
 
         <div className="overview__card overview__card--full">
           <CardHeader title="Overdue heatmap (customers × period)" subtitle="Weekly hotspots of overdue orders" />
-          <div className="priority__heatmap">
+          <div className="priority__heatmap" style={{ height: heatmapHeight }}>
             {hasHeatmap ? (
               <ResponsiveHeatMap
                 data={heatmapRows}
                 margin={{ top: 50, right: 60, bottom: 80, left: 160 }}
-                colors={{ type: 'sequential', scheme: 'reds' }}
+                colors={{
+                  type: 'sequential',
+                  colors: ['#0f172a', '#1e3a8a', '#6366f1', '#f472b6', '#be123c', '#7f1d1d'],
+                }}
                 axisTop={{
                   tickSize: 5,
                   tickPadding: 5,
@@ -246,8 +256,9 @@ export function PriorityOrdersTab() {
                 enableGridX
                 enableGridY
                 labelTextColor="rgba(255, 255, 255, 0.85)"
+                borderWidth={1}
                 borderColor="rgba(3, 6, 15, 0.2)"
-                emptyColor="rgba(255, 255, 255, 0.06)"
+                emptyColor="rgba(255, 255, 255, 0.2)"
                 theme={heatmapTheme}
                 tooltip={HeatmapTooltip}
                 animate={false}
