@@ -1,0 +1,22 @@
+.operational__state-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: rgba(76, 110, 245, 0.18);
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+
+.operational__order-ref {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.01em;
+  color: var(--color-text-primary);
+}
+
+.operational__table-subtle {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}

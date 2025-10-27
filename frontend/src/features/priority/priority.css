@@ -1,0 +1,40 @@
+.priority__grid {
+  display: grid;
+  gap: 24px;
+}
+
+.priority__heatmap {
+  height: 360px;
+}
+
+.priority__heatmap-tooltip {
+  background: #0f1d3b;
+  color: var(--color-text-primary);
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: 0 12px 28px rgba(3, 6, 15, 0.45);
+}
+
+.priority__heatmap-tooltip strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+
+.priority__state {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(76, 110, 245, 0.18);
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+
+.priority__order-ref {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.01em;
+  color: var(--color-text-primary);
+}

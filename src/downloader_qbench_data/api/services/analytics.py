@@ -655,7 +655,6 @@ def get_overdue_orders(
         Sample.date_created.isnot(None),
         Sample.date_created >= window_start,
         Sample.date_created <= reference_dt,
-        Sample.has_report.is_(False),
         or_(Order.state.is_(None), Order.state.notin_(("COMPLETED", "REPORTED"))),
     ]
 

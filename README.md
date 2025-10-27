@@ -1,7 +1,7 @@
 # Downloader QBench Data
-
+   ```
 Aplicacion Python para descargar y mantener sincronizada la informacion de QBench en una base de datos PostgreSQL local. Actualmente cubre la descarga de **customers**, **orders**, **samples**, **tests** y **batches** con soporte para cargas completas e incrementales, incluyendo checkpoints y manejo de errores.
-
+   ```
 ## Tecnologias principales
 - Python 3.12+
 - [httpx](https://www.python-httpx.org/) para consumo de la API QBench
@@ -9,30 +9,31 @@ Aplicacion Python para descargar y mantener sincronizada la informacion de QBenc
 - [pandas](https://pandas.pydata.org/) (planeado para validaciones)
 - [PySide6](https://doc.qt.io/qtforpython/) (fase posterior para UI manual)
 - [FastAPI](https://fastapi.tiangolo.com/) para exponer los datos sincronizados
-
+- React + TypeScript (dashboard web responsive)
+   ```
 ## Requisitos previos
 1. Python 3.12 instalado y disponible en `PATH`.
 2. PostgreSQL accesible (local o remoto) con el rol/base configurados.
 3. Credenciales QBench validas (ID, secret y endpoint de token).
 4. [git](https://git-scm.com/) si vas a clonar/colaborar.
-
+   ```
 ## Instalacion y configuracion
 ```bash
 # Crear y activar entorno virtual (Windows PowerShell)
 python -m venv .venv
 .\.venv\Scripts\Activate
-
+   ```
 # Instalar dependencias
 pip install -r requirements.txt
-
+   ```
 # Configurar variables de entorno (copiar .env.example)
 copy .env.example .env
 # editar .env con credenciales QBench y datos de PostgreSQL
 # variables opcionales:
-#   SYNC_LOOKBACK_DAYS=7        # horizonte por defecto (en días) para el pipeline de sincronización ventana
-#   PAGE_SIZE=50                # tamaño base de página (el valor real no excederá el máximo permitido por QBench)
+#   SYNC_LOOKBACK_DAYS=7        # horizonte por defecto (en dÃ­as) para el pipeline de sincronizaciÃ³n ventana
+#   PAGE_SIZE=50                # tamaÃ±o base de pÃ¡gina (el valor real no excederÃ¡ el mÃ¡ximo permitido por QBench)
 ```
-
+   ```
 ## Estructura del proyecto
 ```
 Downloader-Qbench-Data/
@@ -58,7 +59,7 @@ Downloader-Qbench-Data/
 |-- README.md                 # Este archivo
 `-- .env.example              # Plantilla de variables de entorno
 ```
-
+   ```
 ## Ejecucion
 1. Asegurate de tener la base y credenciales configuradas en `.env`.
 2. Activa el entorno virtual antes de ejecutar cualquier script (`.\.venv\Scripts\Activate` en PowerShell).
@@ -73,10 +74,10 @@ Downloader-Qbench-Data/
    python scripts/run_sync_window.py --days 7    # sincroniza ventana reciente (orden descendente) y genera reporte
    ```
    Omite `--full` para realizar sincronizaciones incrementales aprovechando el checkpoint almacenado.
-   El comando `run_sync_window.py` mantiene un rango móvil actualizado sin recorrer todo el feed:
+   El comando `run_sync_window.py` mantiene un rango mÃ³vil actualizado sin recorrer todo el feed:
    - Usa `--days N` (o el valor por defecto `SYNC_LOOKBACK_DAYS`) para definir el horizonte.
-   - Cada entidad se consulta ordenada por `date_created` descendente; cuando los registros están fuera del rango se detiene la paginación.
-   - Cuando falta una dependencia (cliente/orden/muestra/test) intenta recuperarla sin salir del flujo, con un máximo de 3 intentos antes de registrar el elemento en `skipped`.
+   - Cada entidad se consulta ordenada por `date_created` descendente; cuando los registros estÃ¡n fuera del rango se detiene la paginaciÃ³n.
+   - Cuando falta una dependencia (cliente/orden/muestra/test) intenta recuperarla sin salir del flujo, con un mÃ¡ximo de 3 intentos antes de registrar el elemento en `skipped`.
    - Genera un informe en `docs/sync_reports/sync_report_<fecha>.txt` con el total de nuevos registros por entidad y los IDs que no pudieron sincronizarse.
    El comando `run_sync_all.py` acepta argumentos adicionales, por ejemplo:
    ```bash
@@ -94,15 +95,23 @@ Downloader-Qbench-Data/
    python scripts/run_dashboard.py
    ```
    Puedes ajustar el backend usando la variable `DASHBOARD_API_BASE_URL` si el servicio corre en otro host.
-6. Descarga entidades puntuales cuando necesites reprocesar IDs especificos:
+6. Construye o desarrolla el dashboard web (React + TypeScript):
+   ```bash
+   cd frontend
+   npm install          # solo la primera vez
+   npm run dev          # modo desarrollo en http://localhost:5177
+   npm run build        # genera frontend/dist para servirlo con FastAPI
+   ```
+   Opcional: define `API_BASE_URL=http://localhost:8000/api/v1` para apuntar a otra instancia durante el desarrollo.
+   Cuando existe `frontend/dist`, la aplicacion FastAPI expone el dashboard en `http://localhost:8000/dashboard/` tras ejecutar `python scripts/run_api.py`.
+7. Descarga entidades puntuales cuando necesites reprocesar IDs especificos:
    ```bash
    python scripts/fetch_single_entity.py test 12345
    python scripts/fetch_single_entity.py sample 67890 --skip-foreign-check
    ```
    El comando utiliza el `EntityRecoveryService`, de modo que trae dependencias faltantes en cascada y actualiza los checkpoints relacionados automáticamente.
    El comando inserta/actualiza la fila en la base, valida dependencias basicas y actualiza el checkpoint.
-7. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
-
+8. Verifica los registros en PostgreSQL (`customers`, `orders`, `samples`, `batches`, `tests`, `sync_checkpoints`).
 ### Sincronizacion de tests
 - El pipeline usa el script `scripts/run_sync_tests.py` y crea/actualiza el checkpoint `sync_checkpoints.entity = 'tests'`.
 - Solo se persistiran tests cuyo `sample_id` exista localmente; si falta se registra en el resumen y se omite.
@@ -112,7 +121,7 @@ Downloader-Qbench-Data/
   - `--full`: fuerza un refresh completo, ignorando el checkpoint previo.
   - `--page-size`: sobrescribe el `page_size` configurado (maximo 50 por restricciones de la API).
 - El script muestra progreso por pagina con `tqdm` y al finalizar imprime un resumen con totales procesados, omisiones y la ultima fecha sincronizada.
-
+   ```
 ### API REST
 - `GET /api/health`: verificacion rapida del servicio.
 - `GET /api/v1/metrics/summary`: KPIs globales (samples, tests, customers, reports) y TAT promedio.

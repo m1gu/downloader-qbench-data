@@ -1,0 +1,207 @@
+import { parseISO } from 'date-fns'
+import { apiFetch } from '../../lib/api'
+import { formatDateLabel } from '../../utils/format'
+import type {
+  HeatmapCustomer,
+  HeatmapData,
+  OverdueOrder,
+  PriorityFilters,
+  PriorityOrdersData,
+  PriorityKpis,
+  ReadySample,
+  StateBreakdownItem,
+  TimelinePoint,
+  WarningOrder,
+} from './types'
+
+interface OverdueOrdersResponse {
+  interval: string
+  minimum_days_overdue: number
+  warning_window_days: number
+  sla_hours: number
+  kpis: {
+    total_overdue: number
+    average_open_hours: number | null
+    max_open_hours: number | null
+    percent_overdue_vs_active: number
+    overdue_beyond_sla: number
+    overdue_within_sla: number
+  }
+  top_orders: Array<{
+    order_id: number
+    custom_formatted_id: string | null
+    customer_name: string | null
+    state: string | null
+    date_created: string | null
+    open_hours: number
+  }>
+  warning_orders: Array<{
+    order_id: number
+    custom_formatted_id: string | null
+    customer_name: string | null
+    state: string | null
+    date_created: string | null
+    open_hours: number
+  }>
+  ready_to_report_samples: Array<{
+    sample_id: number
+    sample_name: string | null
+    order_custom_id: string | null
+    customer_name: string | null
+    tests_ready_count: number
+    tests_total_count: number
+  }>
+  timeline: Array<{
+    period_start: string
+    overdue_orders: number
+  }>
+  heatmap: Array<{
+    customer_name: string | null
+    period_start: string
+    overdue_orders: number
+  }>
+  state_breakdown: Array<{
+    state: string | null
+    count: number
+    ratio: number
+  }>
+}
+
+const DEFAULT_WARNING_WINDOW = 5
+
+function toTitleCase(value: string | null | undefined): string {
+  if (!value) return '--'
+  return value
+    .toLowerCase()
+    .split(/[\s_]+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+function buildKpis(response: OverdueOrdersResponse): PriorityKpis {
+  const kpis = response.kpis
+  return {
+    totalOverdue: kpis.total_overdue,
+    overdueBeyondSla: kpis.overdue_beyond_sla,
+    overdueWithinSla: kpis.overdue_within_sla,
+    averageOpenHours: kpis.average_open_hours,
+    maxOpenHours: kpis.max_open_hours,
+    percentOverdueVsActive: kpis.percent_overdue_vs_active,
+  }
+}
+
+function mapOrders(entries: OverdueOrdersResponse['top_orders']): OverdueOrder[] {
+  return entries.map((item) => ({
+    id: item.order_id,
+    reference: item.custom_formatted_id || `Order ${item.order_id}`,
+    customer: item.customer_name || '--',
+    state: toTitleCase(item.state),
+    createdAt: item.date_created ? parseISO(item.date_created) : null,
+    openHours: item.open_hours,
+  }))
+}
+
+function mapWarnings(entries: OverdueOrdersResponse['warning_orders']): WarningOrder[] {
+  return entries.map((item) => ({
+    id: item.order_id,
+    reference: item.custom_formatted_id || `Order ${item.order_id}`,
+    customer: item.customer_name || '--',
+    state: toTitleCase(item.state),
+    createdAt: item.date_created ? parseISO(item.date_created) : null,
+    openHours: item.open_hours,
+  }))
+}
+
+function mapReadySamples(entries: OverdueOrdersResponse['ready_to_report_samples']): ReadySample[] {
+  return entries.map((item) => ({
+    id: item.sample_id,
+    name: item.sample_name || `Sample ${item.sample_id}`,
+    orderReference: item.order_custom_id || '--',
+    customer: item.customer_name || '--',
+    testsDone: item.tests_ready_count,
+    testsTotal: item.tests_total_count,
+  }))
+}
+
+function mapTimeline(entries: OverdueOrdersResponse['timeline']): TimelinePoint[] {
+  return entries.map((point) => {
+    const date = parseISO(point.period_start)
+    return {
+      date,
+      label: formatDateLabel(date),
+      overdueOrders: point.overdue_orders,
+    }
+  })
+}
+
+function mapHeatmap(entries: OverdueOrdersResponse['heatmap']): HeatmapData {
+  if (!entries.length) {
+    return { periods: [], customers: [] }
+  }
+
+  const periods = Array.from(
+    new Set(
+      entries
+        .map((item) => item.period_start)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ).sort()
+
+  const customersMap = new Map<string, HeatmapCustomer>()
+
+  for (const item of entries) {
+    const customerName = item.customer_name || 'Unknown'
+    const key = customerName
+
+    if (!customersMap.has(key)) {
+      customersMap.set(key, {
+        customerName,
+        data: {},
+        total: 0,
+      })
+    }
+
+    const customer = customersMap.get(key)!
+    customer.data[item.period_start] = item.overdue_orders
+    customer.total += item.overdue_orders
+  }
+
+  const customers = Array.from(customersMap.values()).sort((a, b) => b.total - a.total)
+
+  return {
+    periods,
+    customers,
+  }
+}
+
+function mapStateBreakdown(entries: OverdueOrdersResponse['state_breakdown']): StateBreakdownItem[] {
+  return entries.map((item) => ({
+    state: toTitleCase(item.state),
+    count: item.count,
+    ratio: item.ratio,
+  }))
+}
+
+export async function fetchPriorityOrders(filters: PriorityFilters): Promise<PriorityOrdersData> {
+  const response = await apiFetch<OverdueOrdersResponse>('/analytics/orders/overdue', {
+    date_from: filters.dateFrom,
+    date_to: filters.dateTo,
+    interval: filters.interval,
+    min_days_overdue: filters.minDaysOverdue,
+    warning_window_days: DEFAULT_WARNING_WINDOW,
+    sla_hours: filters.slaHours,
+    top_limit: 20,
+    client_limit: 20,
+    warning_limit: 10,
+  })
+
+  return {
+    kpis: buildKpis(response),
+    topOrders: mapOrders(response.top_orders),
+    warningOrders: mapWarnings(response.warning_orders),
+    readySamples: mapReadySamples(response.ready_to_report_samples),
+    timeline: mapTimeline(response.timeline),
+    heatmap: mapHeatmap(response.heatmap),
+    stateBreakdown: mapStateBreakdown(response.state_breakdown),
+  }
+}

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from downloader_qbench_data.config import get_settings
 from .routers import analytics, entities, metrics
@@ -42,5 +46,20 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router, prefix="/api/v1")
     app.include_router(analytics.router, prefix="/api/v1")
     app.include_router(entities.router, prefix="/api/v1")
+
+    frontend_dist = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+    if frontend_dist.exists():
+        LOGGER.info("Serving dashboard static files from %s", frontend_dist)
+        app.mount(
+            "/dashboard",
+            StaticFiles(directory=frontend_dist, html=True),
+            name="dashboard",
+        )
+
+        @app.get("/", include_in_schema=False)
+        async def root_redirect() -> RedirectResponse:
+            return RedirectResponse(url="/dashboard/", status_code=307)
+    else:
+        LOGGER.warning("Frontend build not found at %s; dashboard route disabled", frontend_dist)
 
     return app
