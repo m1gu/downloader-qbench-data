@@ -88,3 +88,7 @@ logs/
 *.sqlite
 
 *.json
+
+
+!frontend/*.json
+!frontend/**/*.json
