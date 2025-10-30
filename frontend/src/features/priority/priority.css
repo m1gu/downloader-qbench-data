@@ -1,3 +1,7 @@
+:root {
+  --priority-scrollbar-width: 14px;
+}
+
 .priority__controls {
   display: flex;
   flex-direction: column;
@@ -78,14 +82,24 @@
   margin-bottom: 24px;
 }
 
+/* separación vertical entre cards */
 .priority__grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 24px;
+  justify-items: stretch;
 }
 
-.priority__grid .overview__card {
-  width: 100%;
+/* evita recortes raros */
+.priority__grid .overview__card { 
+  min-width: 0;
+  justify-self: stretch;
+  margin-bottom: 40px;
+}
+
+/* Solo a las cards que contienen tabla con scroll:
+   empujamos el contenido 14px y extendemos visualmente 14px */
+.overview__card:has(.priority__table) {
+  padding-right: var(--priority-scrollbar-width);
 }
 
 .priority__heatmap {
@@ -147,14 +161,14 @@
   color: #ff7b9e;
 }
 
+/* restaura la compensación del scrollbar dentro de la tabla */
 .priority__table {
-  --priority-scrollbar-width: 14px;
+  --priority-scrollbar-width: 14px; /* por si no usas :root */
   max-height: 320px;
   overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: calc(4px + var(--priority-scrollbar-width));
-  margin-right: calc(-1 * var(--priority-scrollbar-width));
   scrollbar-gutter: stable;
+  padding-right: 4px;
+  margin-right: calc(-1 * var(--priority-scrollbar-width));
 }
 
 .priority__table table {
