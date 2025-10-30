@@ -30,11 +30,13 @@ export interface DailyActivityResponse {
     date: string
     samples: number
     tests: number
+    tests_reported: number
   }>
   previous?: Array<{
     date: string
     samples: number
     tests: number
+    tests_reported: number
   }>
 }
 
@@ -51,6 +53,7 @@ export interface TopCustomersResponse {
     id: number
     name: string
     tests: number
+    tests_reported: number
   }>
 }
 
@@ -95,6 +98,7 @@ export interface OverviewData {
     label: string
     samples: number
     tests: number
+    testsReported: number
   }>
   newCustomers: Array<{
     id: number
@@ -105,6 +109,7 @@ export interface OverviewData {
     id: number
     name: string
     tests: number
+    testsReported: number
   }>
   testsByLabel: Array<{
     label: string

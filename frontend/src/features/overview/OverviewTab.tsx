@@ -123,7 +123,10 @@ export function OverviewTab() {
 
       <section className="overview__grid">
         <div className="overview__card overview__card--full">
-          <CardHeader title="Samples vs Tests" subtitle="Daily count of samples and tests completed" />
+          <CardHeader
+            title="Samples vs Tests"
+            subtitle="Daily count of samples created, tests completed, and tests reported"
+          />
           <div className="overview__chart">
             {data?.dailyActivity && data.dailyActivity.length > 0 ? (
               <ResponsiveContainer width="100%" height={320}>
@@ -138,6 +141,7 @@ export function OverviewTab() {
                   <Legend />
                   <Bar dataKey="samples" name="Samples" fill="#4C6EF5" radius={[6, 6, 0, 0]} />
                   <Bar dataKey="tests" name="Tests" fill="#7EE787" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="testsReported" name="Tests reported" fill="#F472B6" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -183,6 +187,7 @@ export function OverviewTab() {
                   <th>ID</th>
                   <th>Name</th>
                   <th>Tests</th>
+                  <th>Reported</th>
                 </tr>
               </thead>
               <tbody>
@@ -192,10 +197,11 @@ export function OverviewTab() {
                       <td>{customer.id}</td>
                       <td>{customer.name}</td>
                       <td>{formatNumber(customer.tests)}</td>
+                      <td>{formatNumber(customer.testsReported)}</td>
                     </tr>
                   ))
                 ) : (
-                  <EmptyTable loading={loading} colSpan={3} />
+                  <EmptyTable loading={loading} colSpan={4} />
                 )}
               </tbody>
             </table>

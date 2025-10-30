@@ -22,6 +22,7 @@ from ..schemas.metrics import (
     TestsTATDailyResponse,
     TestsTATResponse,
     TopCustomersResponse,
+    SyncStatusResponse,
 )
 from ..services.metrics import (
     get_daily_activity,
@@ -36,6 +37,7 @@ from ..services.metrics import (
     get_tests_tat_breakdown,
     get_tests_tat_daily,
     get_top_customers_by_tests,
+    get_sync_status,
 )
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
@@ -283,3 +285,16 @@ def tests_label_distribution(
         order_id=order_id,
         state=state,
     )
+
+
+@router.get("/sync/status", response_model=SyncStatusResponse)
+def sync_status(
+    entity: str = Query(
+        "tests",
+        description="Entity name from sync_checkpoints table",
+    ),
+    session: Session = Depends(get_db_session),
+) -> SyncStatusResponse:
+    """Return last sync timestamp for a given entity."""
+
+    return get_sync_status(session, entity=entity)

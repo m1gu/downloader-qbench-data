@@ -138,6 +138,13 @@
   font-size: 1.05rem;
 }
 
+.dashboard__updated {
+  margin: 24px 0 0;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
 @media (max-width: 720px) {
   .dashboard__tabs {
     width: 100%;

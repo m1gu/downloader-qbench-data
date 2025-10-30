@@ -105,6 +105,7 @@ class DailyActivityPoint(BaseModel):
     date: date
     samples: int
     tests: int
+    tests_reported: int
 
 
 class DailyActivityResponse(BaseModel):
@@ -126,10 +127,16 @@ class TopCustomerItem(BaseModel):
     id: int
     name: str
     tests: int
+    tests_reported: int
 
 
 class TopCustomersResponse(BaseModel):
     customers: list[TopCustomerItem]
+
+
+class SyncStatusResponse(BaseModel):
+    entity: str
+    updated_at: Optional[datetime]
 
 
 class ReportsOverviewResponse(BaseModel):

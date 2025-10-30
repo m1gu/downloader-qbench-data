@@ -29,6 +29,11 @@ export function formatDateTimeLabel(date: Date | null): string {
   return format(date, 'yyyy-MM-dd HH:mm')
 }
 
+export function formatDateTimeShort(date: Date | null): string {
+  if (!date) return '--'
+  return format(date, 'MM-dd-yyyy HH:mm')
+}
+
 export function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '--'
   return new Intl.NumberFormat('en-US').format(value)

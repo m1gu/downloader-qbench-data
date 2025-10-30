@@ -27,6 +27,7 @@ from .metrics import (
     TimeSeriesPoint,
     TopCustomerItem,
     TopCustomersResponse,
+    SyncStatusResponse,
 )
 from .analytics import (
     CustomerAlertItem,
@@ -88,6 +89,7 @@ __all__ = [
     "TimeSeriesPoint",
     "TopCustomerItem",
     "TopCustomersResponse",
+    "SyncStatusResponse",
     # Analytics
     "CustomerAlertItem",
     "CustomerAlertsResponse",

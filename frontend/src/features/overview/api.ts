@@ -92,6 +92,7 @@ export async function fetchOverviewData(filters: OverviewFilters): Promise<Overv
           label: formatDateLabel(date),
           samples: point.samples,
           tests: point.tests,
+          testsReported: point.tests_reported ?? 0,
         }
       }) ?? [],
     newCustomers:
@@ -106,6 +107,7 @@ export async function fetchOverviewData(filters: OverviewFilters): Promise<Overv
           id: customer.id,
           name: customer.name,
           tests: customer.tests,
+          testsReported: customer.tests_reported ?? 0,
         }))
         .sort((a, b) => b.tests - a.tests) ?? [],
     testsByLabel:

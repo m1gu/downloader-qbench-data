@@ -10,7 +10,7 @@ from typing import DefaultDict, Iterable, Optional, List
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from downloader_qbench_data.storage import Customer, Order, Sample, Test
+from downloader_qbench_data.storage import Customer, Order, Sample, Test, SyncCheckpoint
 from ..schemas.metrics import (
     DailyActivityPoint,
     DailyActivityResponse,
@@ -38,6 +38,7 @@ from ..schemas.metrics import (
     TimeSeriesPoint,
     TopCustomerItem,
     TopCustomersResponse,
+    SyncStatusResponse,
 )
 
 
@@ -583,6 +584,16 @@ def get_daily_activity(
         state=None,
         batch_id=None,
     )
+    reported_conditions, join_sample_reported, join_order_reported = _apply_test_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=customer_id,
+        order_id=order_id,
+        state=None,
+        batch_id=None,
+        date_column=Test.report_completed_date,
+    )
+    reported_conditions.append(Test.report_completed_date.is_not(None))
 
     current_sample_counts = _fetch_daily_counts(
         session,
@@ -599,7 +610,15 @@ def get_daily_activity(
         join_order=join_order_tests,
         join_sample=join_sample,
     )
-    current_points = _combine_daily_counts(current_sample_counts, current_test_counts)
+    current_reported_counts = _fetch_daily_counts(
+        session,
+        Test,
+        Test.report_completed_date,
+        reported_conditions,
+        join_order=join_order_reported,
+        join_sample=join_sample_reported,
+    )
+    current_points = _combine_daily_counts(current_sample_counts, current_test_counts, current_reported_counts)
 
     previous_points: Optional[list[DailyActivityPoint]] = None
     if compare_previous and date_from and date_to:
@@ -619,6 +638,16 @@ def get_daily_activity(
             state=None,
             batch_id=None,
         )
+        prev_report_conditions, prev_join_sample_reported, prev_join_order_reported = _apply_test_filters(
+            date_from=previous_start,
+            date_to=previous_end,
+            customer_id=customer_id,
+            order_id=order_id,
+            state=None,
+            batch_id=None,
+            date_column=Test.report_completed_date,
+        )
+        prev_report_conditions.append(Test.report_completed_date.is_not(None))
         prev_sample_counts = _fetch_daily_counts(
             session,
             Sample,
@@ -634,7 +663,15 @@ def get_daily_activity(
             join_order=prev_join_order_tests,
             join_sample=prev_join_sample,
         )
-        previous_points = _combine_daily_counts(prev_sample_counts, prev_test_counts)
+        prev_report_counts = _fetch_daily_counts(
+            session,
+            Test,
+            Test.report_completed_date,
+            prev_report_conditions,
+            join_order=prev_join_order_reported,
+            join_sample=prev_join_sample_reported,
+        )
+        previous_points = _combine_daily_counts(prev_sample_counts, prev_test_counts, prev_report_counts)
 
     return DailyActivityResponse(current=current_points, previous=previous_points)
 
@@ -687,11 +724,56 @@ def get_top_customers_by_tests(
         .order_by(func.count(Test.id).desc())
         .limit(limit)
     )
+    results = list(session.execute(stmt))
+    if not results:
+        return TopCustomersResponse(customers=[])
+
+    customer_ids = [cid for cid, _, _ in results]
+
+    reported_conditions, _, _ = _apply_test_filters(
+        date_from=date_from,
+        date_to=date_to,
+        customer_id=None,
+        order_id=None,
+        state=None,
+        batch_id=None,
+        date_column=Test.report_completed_date,
+    )
+    reported_conditions.append(Test.report_completed_date.is_not(None))
+    reported_stmt = (
+        select(Customer.id, func.count(Test.id))
+        .select_from(Test)
+        .join(Sample, Sample.id == Test.sample_id)
+        .join(Order, Sample.order_id == Order.id)
+        .join(Customer, Customer.id == Order.customer_account_id)
+        .where(Customer.id.in_(customer_ids), *reported_conditions)
+        .group_by(Customer.id)
+    )
+    reported_map = {
+        cid: count for cid, count in session.execute(reported_stmt)
+    }
+
     customers = [
-        TopCustomerItem(id=cid, name=name, tests=count)
-        for cid, name, count in session.execute(stmt)
+        TopCustomerItem(
+            id=cid,
+            name=name,
+            tests=count,
+            tests_reported=int(reported_map.get(cid, 0)),
+        )
+        for cid, name, count in results
     ]
     return TopCustomersResponse(customers=customers)
+
+
+def get_sync_status(
+    session: Session,
+    *,
+    entity: str,
+) -> SyncStatusResponse:
+    updated_at = session.execute(
+        select(SyncCheckpoint.updated_at).where(SyncCheckpoint.entity == entity)
+    ).scalar_one_or_none()
+    return SyncStatusResponse(entity=entity, updated_at=updated_at)
 
 
 def get_reports_overview(
@@ -830,14 +912,17 @@ def _fetch_daily_counts(
 
 def _combine_daily_counts(
     samples: dict[date, int],
-    tests: dict[date, int],
+    tests_created: dict[date, int],
+    tests_reported: Optional[dict[date, int]] = None,
 ) -> list[DailyActivityPoint]:
-    all_dates = sorted(set(samples.keys()) | set(tests.keys()))
+    reported_map = tests_reported or {}
+    all_dates = sorted(set(samples.keys()) | set(tests_created.keys()) | set(reported_map.keys()))
     return [
         DailyActivityPoint(
             date=point_date,
             samples=samples.get(point_date, 0),
-            tests=tests.get(point_date, 0),
+            tests=tests_created.get(point_date, 0),
+            tests_reported=reported_map.get(point_date, 0),
         )
         for point_date in all_dates
     ]

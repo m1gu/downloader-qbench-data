@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi.testclient import TestClient
 from downloader_qbench_data.api import create_app
@@ -62,6 +62,7 @@ from downloader_qbench_data.api.schemas import (
     TimeSeriesPoint,
     TopCustomerItem,
     TopCustomersResponse,
+    SyncStatusResponse,
 )
 
 
@@ -100,12 +101,12 @@ def test_metrics_summary_endpoint(monkeypatch):
 def test_daily_activity_endpoint(monkeypatch):
     response_payload = DailyActivityResponse(
         current=[
-            DailyActivityPoint(date=date(2025, 10, 15), samples=20, tests=40),
-            DailyActivityPoint(date=date(2025, 10, 16), samples=25, tests=50),
+            DailyActivityPoint(date=date(2025, 10, 15), samples=20, tests=40, tests_reported=22),
+            DailyActivityPoint(date=date(2025, 10, 16), samples=25, tests=50, tests_reported=28),
         ],
         previous=[
-            DailyActivityPoint(date=date(2025, 10, 13), samples=10, tests=20),
-            DailyActivityPoint(date=date(2025, 10, 14), samples=15, tests=30),
+            DailyActivityPoint(date=date(2025, 10, 13), samples=10, tests=20, tests_reported=12),
+            DailyActivityPoint(date=date(2025, 10, 14), samples=15, tests=30, tests_reported=18),
         ],
     )
     monkeypatch.setattr(
@@ -138,8 +139,8 @@ def test_new_customers_endpoint(monkeypatch):
 def test_top_customers_endpoint(monkeypatch):
     response_payload = TopCustomersResponse(
         customers=[
-            TopCustomerItem(id=1, name="Acme", tests=50),
-            TopCustomerItem(id=2, name="Globex", tests=30),
+            TopCustomerItem(id=1, name="Acme", tests=50, tests_reported=32),
+            TopCustomerItem(id=2, name="Globex", tests=30, tests_reported=18),
         ]
     )
     monkeypatch.setattr(
@@ -150,6 +151,24 @@ def test_top_customers_endpoint(monkeypatch):
     resp = client.get("/api/v1/metrics/customers/top-tests")
     assert resp.status_code == 200
     assert resp.json()["customers"][0]["tests"] == 50
+    assert resp.json()["customers"][0]["tests_reported"] == 32
+
+
+def test_sync_status_endpoint(monkeypatch):
+    response_payload = SyncStatusResponse(
+        entity="tests",
+        updated_at=datetime(2025, 10, 30, 11, 47, tzinfo=timezone.utc),
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.metrics.get_sync_status",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/metrics/sync/status?entity=tests")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["entity"] == "tests"
+    assert body["updated_at"] == "2025-10-30T11:47:00+00:00"
 
 
 def test_reports_overview_endpoint(monkeypatch):

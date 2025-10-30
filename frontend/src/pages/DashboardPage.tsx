@@ -1,5 +1,8 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { parseISO } from 'date-fns'
+import { apiFetch } from '../lib/api'
+import { formatDateTimeShort } from '../utils/format'
 import './dashboard.css'
 
 type NavItem = {
@@ -16,6 +19,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export function DashboardPage() {
   const location = useLocation()
+  const [syncLabel, setSyncLabel] = useState<string | null>(null)
 
   const heroCopy = useMemo(() => {
     if (location.pathname.includes('operational-efficiency')) {
@@ -38,6 +42,31 @@ export function DashboardPage() {
       subtitle: 'Monitor QBench activity with key metrics, turnaround trends, and highlighted customers.',
     }
   }, [location.pathname])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const status = await apiFetch<{ entity: string; updated_at: string | null }>('/metrics/sync/status', {
+          entity: 'tests',
+        })
+        if (cancelled) return
+        if (status.updated_at) {
+          const date = parseISO(status.updated_at)
+          setSyncLabel(formatDateTimeShort(date))
+        } else {
+          setSyncLabel(null)
+        }
+      } catch {
+        if (!cancelled) {
+          setSyncLabel(null)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <div className="dashboard">
@@ -76,6 +105,7 @@ export function DashboardPage() {
           <p className="dashboard__eyebrow">{heroCopy.eyebrow}</p>
           <h1 className="dashboard__title">{heroCopy.title}</h1>
           <p className="dashboard__subtitle">{heroCopy.subtitle}</p>
+          {syncLabel && <p className="dashboard__updated">Data updated through {syncLabel}</p>}
         </section>
         <Outlet />
       </main>
