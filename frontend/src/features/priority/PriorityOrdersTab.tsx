@@ -2,7 +2,14 @@ import { parseISO, subDays } from 'date-fns'
 import * as React from 'react'
 import { ResponsiveHeatMap } from '@nivo/heatmap'
 import type { DefaultHeatMapDatum, HeatMapSerie, TooltipProps } from '@nivo/heatmap'
-import { formatDateInput, formatDateLabel, formatDateTimeLabel, formatHoursToDuration, formatNumber } from '../../utils/format'
+import {
+  formatApiDateTimeUtc,
+  formatDateInput,
+  formatDateLabel,
+  formatDateTimeLabel,
+  formatHoursToDuration,
+  formatNumber,
+} from '../../utils/format'
 import type { PriorityFilters } from './types'
 import { usePriorityOrders } from './usePriorityOrders'
 import './priority.css'
@@ -15,11 +22,13 @@ const DEFAULT_SLA_HOURS = 120
 type FormState = Pick<PriorityFilters, 'minDaysOverdue' | 'slaHours'>
 
 function computeRange() {
-  const today = new Date()
-  const start = subDays(today, LOOKBACK_DAYS - 1)
+  const end = new Date()
+  end.setUTCHours(23, 59, 59, 999)
+  const start = subDays(new Date(end), LOOKBACK_DAYS - 1)
+  start.setUTCHours(0, 0, 0, 0)
   return {
-    from: formatDateInput(start),
-    to: formatDateInput(today),
+    from: formatApiDateTimeUtc(start),
+    to: formatApiDateTimeUtc(end),
   }
 }
 
@@ -98,7 +107,15 @@ export function PriorityOrdersTab() {
     const totalRows = heatmapRows.length
     return Math.max(baseHeight, totalRows * rowHeight)
   }, [heatmapRows.length])
-  const rangeLabel = `${filters.dateFrom} - ${filters.dateTo}`
+  const rangeLabel = React.useMemo(() => {
+    try {
+      const from = formatDateInput(parseISO(filters.dateFrom))
+      const to = formatDateInput(parseISO(filters.dateTo))
+      return `${from} - ${to}`
+    } catch {
+      return `${filters.dateFrom} - ${filters.dateTo}`
+    }
+  }, [filters.dateFrom, filters.dateTo])
   const lastUpdatedLabel = lastUpdated ? `${formatDateTimeLabel(lastUpdated)}` : '--'
 
   return (

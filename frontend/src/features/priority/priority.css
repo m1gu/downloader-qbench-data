@@ -80,13 +80,18 @@
 
 .priority__grid {
   display: grid;
+  grid-template-columns: 1fr;
   gap: 24px;
+}
+
+.priority__grid .overview__card {
+  width: 100%;
 }
 
 .priority__heatmap {
   height: 360px;
-  width: calc(100% + 48px);
-  margin: 0 -24px;
+  width: 100%;
+  margin: 0;
 }
 
 .priority__heatmap-tooltip {
@@ -143,7 +148,15 @@
 }
 
 .priority__table {
+  --priority-scrollbar-width: 14px;
   max-height: 320px;
   overflow-y: auto;
-  padding-right: 4px;
+  overflow-x: hidden;
+  padding-right: calc(4px + var(--priority-scrollbar-width));
+  margin-right: calc(-1 * var(--priority-scrollbar-width));
+  scrollbar-gutter: stable;
+}
+
+.priority__table table {
+  width: 100%;
 }

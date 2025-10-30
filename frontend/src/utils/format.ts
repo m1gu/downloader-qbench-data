@@ -13,6 +13,13 @@ export function formatDateInput(date: Date): string {
   return format(date, 'yyyy-MM-dd')
 }
 
+export function formatApiDateTimeUtc(date: Date): string {
+  const iso = date.toISOString()
+  const [base, fractionalWithZ = '000Z'] = iso.split('.')
+  const fractional = fractionalWithZ.replace('Z', '').padEnd(6, '0')
+  return `${base}.${fractional}+00:00`
+}
+
 export function formatDateLabel(date: Date): string {
   return format(date, 'MMM dd')
 }
