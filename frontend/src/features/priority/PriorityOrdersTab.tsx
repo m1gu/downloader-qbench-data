@@ -23,9 +23,7 @@ type FormState = Pick<PriorityFilters, 'minDaysOverdue' | 'slaHours'>
 
 function computeRange() {
   const end = new Date()
-  end.setUTCHours(23, 59, 59, 999)
-  const start = subDays(new Date(end), LOOKBACK_DAYS - 1)
-  start.setUTCHours(0, 0, 0, 0)
+  const start = subDays(end, LOOKBACK_DAYS)
   return {
     from: formatApiDateTimeUtc(start),
     to: formatApiDateTimeUtc(end),
