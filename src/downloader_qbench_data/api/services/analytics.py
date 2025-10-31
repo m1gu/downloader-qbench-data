@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple
 
-from sqlalchemy import case, func, literal, or_, select
+from sqlalchemy import and_, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from downloader_qbench_data.storage import Customer, Order, Sample, Test
@@ -22,6 +22,8 @@ from ..schemas.analytics import (
     OverdueClientSummary,
     OverdueHeatmapCell,
     OverdueOrderItem,
+    OverdueSampleDetail,
+    OverdueTestDetail,
     OverdueOrdersKpis,
     OverdueOrdersResponse,
     OverdueStateBreakdown,
@@ -483,18 +485,166 @@ def get_overdue_orders(
         .order_by(open_hours_expr.desc())
         .limit(max(1, min(top_limit, 200)))
     )
-    top_orders = [
-        OverdueOrderItem(
-            order_id=row.order_id,
-            custom_formatted_id=row.custom_formatted_id,
-            customer_id=row.customer_id,
-            customer_name=row.customer_name,
-            state=row.state,
-            date_created=row.date_created,
-            open_hours=float(row.open_hours) if row.open_hours is not None else 0.0,
+    top_rows = list(session.execute(top_stmt))
+    order_ids = [row.order_id for row in top_rows]
+
+    total_samples_map: Dict[int, int] = {}
+    incomplete_samples_map: Dict[int, list[OverdueSampleDetail]] = {}
+
+    if order_ids:
+        total_samples_stmt = (
+            select(
+                Sample.order_id.label("order_id"),
+                func.count(Sample.id).label("total_samples"),
+            )
+            .select_from(Sample)
+            .where(Sample.order_id.in_(order_ids))
+            .group_by(Sample.order_id)
         )
-        for row in session.execute(top_stmt)
-    ]
+        for row in session.execute(total_samples_stmt):
+            total_samples_map[int(row.order_id)] = int(row.total_samples or 0)
+
+        sample_info_stmt = (
+            select(
+                Sample.id.label("sample_id"),
+                Sample.order_id.label("order_id"),
+                Sample.custom_formatted_id.label("sample_custom_id"),
+                Sample.sample_name.label("sample_name"),
+                Sample.matrix_type.label("matrix_type"),
+            )
+            .where(Sample.order_id.in_(order_ids))
+            .order_by(Sample.order_id, Sample.id)
+        )
+        sample_info_map: Dict[int, Any] = {}
+        for row in session.execute(sample_info_stmt):
+            sample_info_map[int(row.sample_id)] = row
+
+        assay_stats_stmt = (
+            select(
+                Sample.id.label("sample_id"),
+                func.coalesce(Test.label_abbr, literal("--")).label("assay"),
+                func.count(Test.id).label("total_tests"),
+                func.sum(case((Test.state == "REPORTED", 1), else_=0)).label("reported_tests"),
+            )
+            .select_from(Test)
+            .join(Sample, Sample.id == Test.sample_id)
+            .where(Sample.order_id.in_(order_ids))
+            .group_by(Sample.id, func.coalesce(Test.label_abbr, literal("--")))
+        )
+
+        total_tests_per_sample: Dict[int, int] = {}
+        pending_assays_map: Dict[int, set[str]] = {}
+        incomplete_tests_per_sample: Dict[int, int] = {}
+
+        for row in session.execute(assay_stats_stmt):
+            sample_id = int(row.sample_id)
+            assay = row.assay or "--"
+            total_tests = int(row.total_tests or 0)
+            reported_tests = int(row.reported_tests or 0)
+
+            total_tests_per_sample[sample_id] = total_tests_per_sample.get(sample_id, 0) + total_tests
+            if reported_tests <= 0:
+                pending_assays = pending_assays_map.setdefault(sample_id, set())
+                pending_assays.add(assay)
+                incomplete_tests_per_sample[sample_id] = incomplete_tests_per_sample.get(sample_id, 0) + total_tests
+
+        tests_stmt = (
+            select(
+                Sample.order_id.label("order_id"),
+                Sample.id.label("sample_id"),
+                Test.id.label("test_id"),
+                Test.label_abbr,
+                Test.state,
+            )
+            .select_from(Test)
+            .join(Sample, Sample.id == Test.sample_id)
+            .where(Sample.order_id.in_(order_ids))
+            .order_by(Sample.order_id, Sample.id, Test.id)
+        )
+        sample_tests_map: Dict[tuple[int, int], Dict[str, Dict[str, Any]]] = {}
+        for row in session.execute(tests_stmt):
+            sample_id = int(row.sample_id)
+            pending_assays = pending_assays_map.get(sample_id)
+            if not pending_assays:
+                continue
+            assay_key = row.label_abbr or "--"
+            if assay_key not in pending_assays:
+                continue
+            if row.state == "REPORTED":
+                continue
+            key = (int(row.order_id), sample_id)
+            label_dict = sample_tests_map.setdefault(key, {})
+            entry = label_dict.setdefault(
+                assay_key,
+                {
+                    "primary_id": row.test_id,
+                    "test_ids": [],
+                    "states": set(),
+                    "label": row.label_abbr,
+                },
+            )
+            entry["test_ids"].append(row.test_id)
+            entry["states"].add((row.state or "--").upper())
+            if row.test_id < entry["primary_id"]:
+                entry["primary_id"] = row.test_id
+
+        def _state_priority(value: str) -> tuple[int, str]:
+            upper = value.upper()
+            if upper == "REPORTED":
+                return (0, upper)
+            if upper == "NOT REPORTABLE":
+                return (2, upper)
+            return (1, upper)
+
+        for sample_id, assays in pending_assays_map.items():
+            info = sample_info_map.get(sample_id)
+            if not info:
+                continue
+            order_id = int(info.order_id)
+            key = (order_id, sample_id)
+            label_dict = sample_tests_map.get(key, {})
+            tests: list[OverdueTestDetail] = []
+            for assay_key, entry in label_dict.items():
+                states_sorted = sorted(entry["states"], key=_state_priority)
+                tests.append(
+                    OverdueTestDetail(
+                        primary_test_id=int(entry["primary_id"]),
+                        test_ids=sorted(entry["test_ids"]),
+                        label_abbr=entry["label"],
+                        states=states_sorted,
+                    )
+                )
+            tests.sort(key=lambda item: (item.label_abbr or "", item.primary_test_id))
+            sample_detail = OverdueSampleDetail(
+                sample_id=sample_id,
+                sample_custom_id=info.sample_custom_id,
+                sample_name=info.sample_name,
+                matrix_type=info.matrix_type,
+                total_tests=total_tests_per_sample.get(sample_id, 0),
+                incomplete_tests=incomplete_tests_per_sample.get(sample_id, len(tests)),
+                tests=tests,
+            )
+            incomplete_samples_map.setdefault(order_id, []).append(sample_detail)
+
+    top_orders = []
+    for row in top_rows:
+        order_id = int(row.order_id)
+        samples = incomplete_samples_map.get(order_id, [])
+        total_samples = total_samples_map.get(order_id, 0)
+        top_orders.append(
+            OverdueOrderItem(
+                order_id=order_id,
+                custom_formatted_id=row.custom_formatted_id,
+                customer_id=row.customer_id,
+                customer_name=row.customer_name,
+                state=row.state,
+                date_created=row.date_created,
+                open_hours=float(row.open_hours) if row.open_hours is not None else 0.0,
+                total_samples=total_samples,
+                incomplete_sample_count=len(samples),
+                incomplete_samples=samples,
+            )
+        )
 
     clients_stmt = (
         select(
@@ -638,8 +788,7 @@ def get_overdue_orders(
         reference_dt = reference_dt.astimezone(timezone.utc).replace(tzinfo=None)
     window_start = reference_dt - timedelta(days=30)
 
-    ready_states = ("COMPLETED", "NOT REPORTABLE")
-    ready_state_case = case((Test.state.in_(ready_states), 1), else_=0)
+    ready_state_case = case((Test.state == "REPORTED", 1), else_=0)
     ready_tests_subq = (
         select(
             Test.sample_id.label("sample_id"),

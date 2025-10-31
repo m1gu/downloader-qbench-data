@@ -180,6 +180,23 @@ class OverdueOrdersKpis(BaseModel):
     overdue_within_sla: int = Field(..., description="Overdue orders still within SLA")
 
 
+class OverdueTestDetail(BaseModel):
+    primary_test_id: int
+    test_ids: list[int]
+    label_abbr: Optional[str] = None
+    states: list[str]
+
+
+class OverdueSampleDetail(BaseModel):
+    sample_id: int
+    sample_custom_id: Optional[str] = None
+    sample_name: Optional[str] = None
+    matrix_type: Optional[str] = None
+    total_tests: int
+    incomplete_tests: int
+    tests: list[OverdueTestDetail]
+
+
 class OverdueOrderItem(BaseModel):
     order_id: int
     custom_formatted_id: Optional[str] = None
@@ -188,6 +205,9 @@ class OverdueOrderItem(BaseModel):
     state: Optional[str] = None
     date_created: Optional[datetime] = None
     open_hours: float = Field(..., description="Hours since order creation up to the reference time")
+    total_samples: int = Field(0, description="Total samples linked to the order")
+    incomplete_sample_count: int = Field(0, description="Samples with tests not yet reported")
+    incomplete_samples: list[OverdueSampleDetail] = Field(default_factory=list, description="Samples with outstanding tests")
 
 
 class OverdueClientSummary(BaseModel):

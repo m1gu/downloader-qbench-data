@@ -18,6 +18,7 @@ import type { IntervalOption, OperationalFilters } from './types'
 import { useOperationalData } from './useOperationalData'
 import '../overview/overview.css'
 import './operational.css'
+import { resolveOperationalStateClass } from './stateStyles'
 
 const INTERVAL_OPTIONS: Array<{ value: IntervalOption; label: string }> = [
   { value: 'day', label: 'Daily' },
@@ -348,7 +349,11 @@ export function OperationalEfficiencyTab() {
                       </td>
                       <td>
                         {order.state !== '--' ? (
-                          <span className="operational__state-pill">{order.state}</span>
+                          <span
+                            className={`operational__state-pill ${resolveOperationalStateClass(order.state)}`}
+                          >
+                            {order.state}
+                          </span>
                         ) : (
                           '--'
                         )}

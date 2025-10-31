@@ -26,6 +26,8 @@ from downloader_qbench_data.api.schemas import (
     OverdueClientSummary,
     OverdueHeatmapCell,
     OverdueOrderItem,
+    OverdueSampleDetail,
+    OverdueTestDetail,
     OverdueOrdersKpis,
     OverdueOrdersResponse,
     OverdueStateBreakdown,
@@ -456,6 +458,26 @@ def test_orders_overdue_endpoint(monkeypatch):
                 state="ON HOLD",
                 date_created=datetime(2025, 8, 15, 9, 30),
                 open_hours=1200.0,
+                total_samples=10,
+                incomplete_sample_count=2,
+                incomplete_samples=[
+                    OverdueSampleDetail(
+                        sample_id=7001,
+                        sample_custom_id="S-7001",
+                        sample_name="Sample Alpha",
+                        matrix_type="Flower",
+                        total_tests=8,
+                        incomplete_tests=3,
+                        tests=[
+                            OverdueTestDetail(
+                                primary_test_id=9101,
+                                test_ids=[9101],
+                                label_abbr="THC",
+                                states=["IN PROGRESS"],
+                            )
+                        ],
+                    )
+                ],
             )
         ],
         clients=[
@@ -523,6 +545,8 @@ def test_orders_overdue_endpoint(monkeypatch):
     body = resp.json()
     assert body["kpis"]["total_overdue"] == 12
     assert body["top_orders"][0]["order_id"] == 501
+    assert body["top_orders"][0]["total_samples"] == 10
+    assert body["top_orders"][0]["incomplete_samples"][0]["tests"][0]["states"][0] == "IN PROGRESS"
     assert body["ready_to_report_samples"][0]["sample_custom_id"] == "S-9001"
 
 

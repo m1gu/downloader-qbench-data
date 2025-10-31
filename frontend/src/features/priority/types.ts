@@ -25,12 +25,33 @@ export interface OverdueOrder {
   createdAt: Date | null
   openHours: number
   slaBreached: boolean
+  totalSamples: number
+  incompleteSamples: number
+  samples: OverdueSample[]
+}
+
+export interface OverdueSample {
+  id: number
+  customId: string
+  name: string
+  matrixType: string
+  totalTests: number
+  incompleteTests: number
+  tests: OverdueTest[]
+}
+
+export interface OverdueTest {
+  id: number
+  testIds: number[]
+  label: string
+  states: string[]
 }
 
 export interface WarningOrder extends OverdueOrder {}
 
 export interface ReadySample {
   id: number
+  customId: string
   name: string
   orderReference: string
   customer: string
