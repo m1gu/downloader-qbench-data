@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
 
     allowed_origins = {
         "https://615c98lc-8000.use.devtunnels.ms",
+        "https://615c98lc-5177.use.devtunnels.ms",
         "http://localhost:5173",
         "http://localhost:5177",
         "http://127.0.0.1:5173",
