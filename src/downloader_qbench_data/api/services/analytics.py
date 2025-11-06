@@ -788,7 +788,10 @@ def get_overdue_orders(
         reference_dt = reference_dt.astimezone(timezone.utc).replace(tzinfo=None)
     window_start = reference_dt - timedelta(days=30)
 
-    ready_state_case = case((Test.state == "REPORTED", 1), else_=0)
+    ready_state_case = case(
+        (Test.state.in_(("COMPLETED", "NOT REPORTABLE")), 1),
+        else_=0,
+    )
     ready_tests_subq = (
         select(
             Test.sample_id.label("sample_id"),
