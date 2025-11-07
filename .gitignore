@@ -1,96 +1,82 @@
-﻿# Byte-compiled / optimized / DLL files
+# General ------------------------------------------------------------------
 __pycache__/
 *.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-docs/
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-.venv/
-.env.local
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# VS Code
-.vscode/
-
-# mypy
-.mypy_cache/
-.dmypy.json
-.dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# C extensions
+*.class
+*.pyo
 *.pyd
-
-# OS generated files
+.Python
 .DS_Store
 Thumbs.db
-
-# Logs
-logs/
 *.log
+logs/
+*.tmp
+*.bak
 
-# Local environment files
+# Virtual environments / local env files -----------------------------------
+.venv/
 .env
 .env.*
 !.env.example
+.env.local
+.python-version
 
-# Database dumps
-*.sql
+# Build / packaging artifacts ----------------------------------------------
+build/
+dist/
+downloads/
+sdist/
+eggs/
+.eggs/
+*.egg-info/
+*.egg
+develop-eggs/
+parts/
+var/
+lib/
+lib64/
+
+# Installer/PyInstaller leftovers ------------------------------------------
+pip-log.txt
+pip-delete-this-directory.txt
+*.manifest
+*.spec
+
+# Test / coverage cache ----------------------------------------------------
+.pytest_cache/
+.hypothesis/
+.tox/
+.nox/
+.cache/
+.coverage
+.coverage.*
+coverage.xml
+nosetests.xml
+*.cover
+
+# Type checker caches ------------------------------------------------------
+.mypy_cache/
+.dmypy.json
+.pyre/
+
+# Editors / tooling --------------------------------------------------------
+.vscode/
+.idea/
+
+# Jupyter ------------------------------------------------------------------
+.ipynb_checkpoints
+
+# Databases / dumps --------------------------------------------------------
+*.db
 *.sqlite
+*.sqlite3
+*.sql
 
-*.json
+# Frontend artifacts -------------------------------------------------------
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
 
-
+# Generated files kept intentionally (allowlists) --------------------------
 !frontend/*.json
 !frontend/**/*.json
-
 !frontend/src/lib/
