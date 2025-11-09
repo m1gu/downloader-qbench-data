@@ -555,6 +555,17 @@ curl -X GET "http://localhost:8000/api/v1/metrics/customers/top-tests?date_from=
 
 ---
 
+ACTUALIZAR LA BASE DE DATOS EN EL SERVIDOR
+ALTER TABLE public.customers
+  ADD COLUMN aliases JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+CREATE INDEX IF NOT EXISTS idx_customers_aliases_gin
+  ON public.customers
+  USING gin (aliases);
+
+
+python scripts/backfill_customer_aliases.py
+
 ## ENDPOINTS BY CUSTOMER
 
 Esta sección concentra endpoints pensados para contestar preguntas por cliente (por ejemplo “¿cuántas órdenes abiertas tiene La Casa de las Flores?”) sin obligar al bot a encadenar múltiples consultas ni resolver IDs manualmente.
