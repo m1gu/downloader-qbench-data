@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..dependencies import get_db_session
@@ -18,9 +18,11 @@ from ..schemas.analytics import (
     QualityKpisResponse,
     SamplesCycleTimeResponse,
     TestsStateDistributionResponse,
+    CustomerOrdersSummaryResponse,
 )
 from ..services.analytics import (
     get_customer_alerts,
+    get_customer_orders_summary,
     get_orders_funnel,
     get_overdue_orders,
     get_slowest_orders,
@@ -211,6 +213,55 @@ def customers_alerts(
         sla_hours=sla_hours,
         min_alert_percentage=min_alert_percentage,
     )
+
+
+@router.get("/customers/orders/summary", response_model=CustomerOrdersSummaryResponse)
+def customers_orders_summary(
+    customer_id: Optional[int] = Query(None, description="Customer identifier to summarise"),
+    customer_name: Optional[str] = Query(
+        None,
+        min_length=3,
+        description="Customer name or alias to resolve when customer_id is unknown",
+    ),
+    match_strategy: str = Query(
+        "best",
+        pattern="^(best|all)$",
+        description="Use 'all' to retrieve matches without computing metrics",
+    ),
+    match_threshold: float = Query(
+        0.6,
+        ge=0.0,
+        le=1.0,
+        description="Minimum score required to accept a match when strategy is 'best'",
+    ),
+    date_from: Optional[datetime] = Query(None, description="Filter orders created on/after this datetime"),
+    date_to: Optional[datetime] = Query(None, description="Filter orders created on/before this datetime"),
+    sla_hours: float = Query(48.0, ge=0.0, description="SLA threshold in hours"),
+    include_samples: bool = Query(False, description="Include aggregates for pending samples"),
+    include_tests: bool = Query(False, description="Include aggregates for pending tests"),
+    limit_orders: int = Query(20, ge=1, le=100, description="Maximum number of open orders to list"),
+    session: Session = Depends(get_db_session),
+) -> CustomerOrdersSummaryResponse:
+    """Return customer-focused order summary with optional alias lookup."""
+
+    try:
+        return get_customer_orders_summary(
+            session,
+            customer_id=customer_id,
+            customer_name=customer_name,
+            match_strategy=match_strategy,
+            match_threshold=match_threshold,
+            date_from=date_from,
+            date_to=date_to,
+            sla_hours=sla_hours,
+            include_samples=include_samples,
+            include_tests=include_tests,
+            limit_orders=limit_orders,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/tests/state-distribution", response_model=TestsStateDistributionResponse)

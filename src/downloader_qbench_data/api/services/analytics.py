@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from sqlalchemy import and_, case, func, literal, or_, select
+from sqlalchemy import Text, and_, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from downloader_qbench_data.storage import Customer, Order, Sample, Test
@@ -44,6 +44,8 @@ from ..schemas.analytics import (
 from .metrics import _apply_test_filters, _daterange_conditions  # reuse helpers for consistency
 
 _VALID_INTERVALS = {"day", "week"}
+_MATCH_STRATEGIES = {"best", "all"}
+_WARNING_RATIO = 0.75
 
 
 def _normalise_interval(interval: Optional[str]) -> str:
@@ -65,6 +67,15 @@ def _convert_period(period_value) -> datetime.date:
     if hasattr(period_value, "date"):
         return period_value.date()
     return period_value  # Already a date
+
+
+def _normalise_match_strategy(strategy: Optional[str]) -> str:
+    if not strategy:
+        return "best"
+    value = strategy.lower()
+    if value not in _MATCH_STRATEGIES:
+        raise ValueError(f"Unsupported match_strategy '{strategy}'. Allowed values: best, all")
+    return value
 
 
 def get_orders_throughput(
@@ -1318,3 +1329,346 @@ def get_quality_kpis(
         tests=tests_kpi,
         orders=orders_kpi,
     )
+
+
+def _select_primary_alias(aliases: Optional[List[str]], name: Optional[str]) -> Optional[str]:
+    if not aliases:
+        return None
+    for alias in aliases:
+        if alias and alias != name:
+            return alias
+    return aliases[0] if aliases else None
+
+
+def _score_candidate(term: str, name: Optional[str], aliases: Optional[List[str]]) -> tuple[float, Optional[str]]:
+    normalized = term.lower()
+    best_score = 0.0
+    matched_alias = None
+
+    def _score_text(text: Optional[str]) -> float:
+        if not text:
+            return 0.0
+        lowered = text.lower()
+        if lowered == normalized:
+            return 1.0
+        if lowered.startswith(normalized):
+            return 0.9
+        if normalized in lowered:
+            return 0.75
+        return 0.0
+
+    score = _score_text(name)
+    if score > best_score:
+        best_score = score
+
+    for alias in aliases or []:
+        alias_score = _score_text(alias)
+        if alias_score > best_score:
+            best_score = alias_score
+            matched_alias = alias
+
+    if best_score == 0.0:
+        best_score = 0.6
+    return best_score, matched_alias
+
+
+def _find_customer_matches(session: Session, search_term: str, *, limit: int = 10) -> list[dict]:
+    trimmed = (search_term or "").strip()
+    if len(trimmed) < 3:
+        raise ValueError("customer_name must contain at least 3 characters")
+    pattern = f"%{trimmed.lower()}%"
+    stmt = (
+        select(Customer.id, Customer.name, Customer.aliases)
+        .where(
+            func.lower(Customer.name).like(pattern)
+            | func.lower(func.cast(Customer.aliases, Text)).like(pattern)
+        )
+        .limit(limit)
+    )
+    results: list[dict] = []
+    for row in session.execute(stmt):
+        aliases = list(row.aliases or [])
+        score, alias = _score_candidate(trimmed, row.name, aliases)
+        results.append(
+            {
+                "id": row.id,
+                "name": row.name,
+                "aliases": aliases,
+                "alias_match": alias,
+                "match_score": score,
+            }
+        )
+    results.sort(key=lambda item: item["match_score"], reverse=True)
+    return results
+
+
+def _order_conditions(customer_id: int, date_from: Optional[datetime], date_to: Optional[datetime]) -> list:
+    conditions = [Order.customer_account_id == customer_id]
+    if date_from:
+        conditions.append(Order.date_created >= date_from)
+    if date_to:
+        conditions.append(Order.date_created <= date_to)
+    return conditions
+
+
+def _classify_sla(age_hours: float, sla_hours: float) -> str:
+    if sla_hours <= 0:
+        return "ok"
+    if age_hours >= sla_hours:
+        return "overdue"
+    warning_threshold = sla_hours * _WARNING_RATIO
+    if age_hours >= warning_threshold:
+        return "warning"
+    return "ok"
+
+
+def get_customer_orders_summary(
+    session: Session,
+    *,
+    customer_id: Optional[int] = None,
+    customer_name: Optional[str] = None,
+    match_strategy: str = "best",
+    match_threshold: float = 0.6,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    sla_hours: float = 48.0,
+    include_samples: bool = False,
+    include_tests: bool = False,
+    limit_orders: int = 20,
+) -> "CustomerOrdersSummaryResponse":
+    from ..schemas.analytics import (
+        CustomerMatchedInfo,
+        CustomerOrderItem,
+        CustomerOrderMetrics,
+        CustomerOrdersSummaryResponse,
+        CustomerOrdersTopPending,
+        CustomerSummaryInfo,
+        CustomerTopPendingMatrix,
+        CustomerTopPendingTest,
+        CustomerLookupMatch,
+    )
+
+    if customer_id is None and not customer_name:
+        raise ValueError("customer_id or customer_name must be provided")
+    strategy = _normalise_match_strategy(match_strategy)
+    matched_customer_payload = None
+
+    if customer_id is not None:
+        customer = session.get(Customer, customer_id)
+        if not customer:
+            raise LookupError("customer_not_found")
+        matched_customer_payload = CustomerMatchedInfo(
+            id=customer.id,
+            name=customer.name,
+            aliases=list(customer.aliases or []),
+            match_score=1.0,
+        )
+    else:
+        matches = _find_customer_matches(session, customer_name or "")
+        if not matches:
+            raise LookupError("customer_not_found")
+        match_models = [
+            CustomerLookupMatch(
+                id=item["id"],
+                name=item["name"],
+                alias=item["alias_match"],
+                match_score=round(float(item["match_score"]), 4),
+            )
+            for item in matches
+        ]
+        if strategy == "all":
+            return CustomerOrdersSummaryResponse(matches=match_models)
+        best = match_models[0]
+        if best.match_score < match_threshold:
+            raise LookupError("customer_not_found")
+        customer = session.get(Customer, best.id)
+        if not customer:
+            raise LookupError("customer_not_found")
+        matched_customer_payload = CustomerMatchedInfo(
+            id=customer.id,
+            name=customer.name,
+            aliases=list(customer.aliases or []),
+            match_score=best.match_score,
+        )
+
+    conditions = _order_conditions(customer.id, date_from, date_to)
+    total_orders = session.execute(select(func.count()).where(*conditions)).scalar_one()
+    last_order_at = session.execute(
+        select(func.max(Order.date_created)).where(Order.customer_account_id == customer.id)
+    ).scalar_one()
+
+    open_stmt = (
+        select(Order.id, Order.state, Order.date_created)
+        .where(Order.date_completed.is_(None), Order.date_created.isnot(None), *conditions)
+    )
+    open_rows = session.execute(open_stmt).all()
+    now = datetime.utcnow()
+    open_orders = len(open_rows)
+    overdue_count = 0
+    warning_count = 0
+    total_open_hours = 0.0
+    order_age_map: dict[int, float] = {}
+
+    for row in open_rows:
+        age_hours = 0.0
+        if row.date_created:
+            delta = now - row.date_created
+            age_hours = max(delta.total_seconds() / 3600.0, 0.0)
+        order_age_map[row.id] = age_hours
+        total_open_hours += age_hours
+        classification = _classify_sla(age_hours, sla_hours)
+        if classification == "overdue":
+            overdue_count += 1
+        elif classification == "warning":
+            warning_count += 1
+
+    avg_open_hours = total_open_hours / open_orders if open_orders else None
+
+    sorted_rows = sorted(open_rows, key=lambda row: order_age_map[row.id], reverse=True)
+    limited_rows = sorted_rows[:limit_orders]
+    limited_ids = [row.id for row in limited_rows]
+
+    per_order_samples: dict[int, int] = {}
+    per_order_tests: dict[int, int] = {}
+
+    if include_samples and limited_ids:
+        sample_stmt = (
+            select(Sample.order_id, func.count().label("pending"))
+            .where(Sample.order_id.in_(limited_ids), Sample.completed_date.is_(None))
+            .group_by(Sample.order_id)
+        )
+        per_order_samples = {row.order_id: int(row.pending) for row in session.execute(sample_stmt)}
+
+    if include_tests and limited_ids:
+        test_stmt = (
+            select(Sample.order_id, func.count().label("pending"))
+            .select_from(Sample)
+            .join(Test, Test.sample_id == Sample.id)
+            .where(Sample.order_id.in_(limited_ids), Test.report_completed_date.is_(None))
+            .group_by(Sample.order_id)
+        )
+        per_order_tests = {row.order_id: int(row.pending) for row in session.execute(test_stmt)}
+
+    orders_payload: list[CustomerOrderItem] = []
+    for row in limited_rows:
+        age_hours = order_age_map.get(row.id, 0.0)
+        age_days = int(age_hours // 24)
+        orders_payload.append(
+            CustomerOrderItem(
+                order_id=row.id,
+                state=row.state,
+                age_days=max(age_days, 0),
+                sla_status=_classify_sla(age_hours, sla_hours),
+                date_created=row.date_created,
+                pending_samples=per_order_samples.get(row.id) if include_samples else None,
+                pending_tests=per_order_tests.get(row.id) if include_tests else None,
+            )
+        )
+
+    pending_samples_total = None
+    pending_tests_total = None
+    top_matrices: list[CustomerTopPendingMatrix] = []
+    top_tests: list[CustomerTopPendingTest] = []
+
+    if include_samples:
+        sample_conditions = [
+            Order.customer_account_id == customer.id,
+            Sample.order_id == Order.id,
+            Sample.completed_date.is_(None),
+        ]
+        if date_from:
+            sample_conditions.append(Order.date_created >= date_from)
+        if date_to:
+            sample_conditions.append(Order.date_created <= date_to)
+
+        pending_samples_total = (
+            session.execute(
+                select(func.count())
+                .select_from(Sample)
+                .join(Order, Order.id == Sample.order_id)
+                .where(*sample_conditions)
+            ).scalar_one_or_none()
+            or 0
+        )
+
+        matrix_stmt = (
+            select(Sample.matrix_type, func.count().label("pending"))
+            .join(Order, Order.id == Sample.order_id)
+            .where(*sample_conditions)
+            .group_by(Sample.matrix_type)
+            .order_by(func.count().desc())
+            .limit(5)
+        )
+        top_matrices = [
+            CustomerTopPendingMatrix(matrix_type=row.matrix_type, pending_samples=int(row.pending))
+            for row in session.execute(matrix_stmt)
+        ]
+
+    if include_tests:
+        test_conditions = [
+            Order.customer_account_id == customer.id,
+            Sample.order_id == Order.id,
+            Test.sample_id == Sample.id,
+            Test.report_completed_date.is_(None),
+        ]
+        if date_from:
+            test_conditions.append(Order.date_created >= date_from)
+        if date_to:
+            test_conditions.append(Order.date_created <= date_to)
+
+        pending_tests_total = (
+            session.execute(
+                select(func.count())
+                .select_from(Test)
+                .join(Sample, Sample.id == Test.sample_id)
+                .join(Order, Order.id == Sample.order_id)
+                .where(*test_conditions)
+            ).scalar_one_or_none()
+            or 0
+        )
+
+        tests_stmt = (
+            select(Test.label_abbr, func.count().label("pending"))
+            .join(Sample, Sample.id == Test.sample_id)
+            .join(Order, Order.id == Sample.order_id)
+            .where(*test_conditions)
+            .group_by(Test.label_abbr)
+            .order_by(func.count().desc())
+            .limit(5)
+        )
+        top_tests = [
+            CustomerTopPendingTest(label_abbr=row.label_abbr, pending_tests=int(row.pending))
+            for row in session.execute(tests_stmt)
+        ]
+
+    metrics = CustomerOrderMetrics(
+        total_orders=int(total_orders),
+        open_orders=open_orders,
+        overdue_orders=overdue_count,
+        warning_orders=warning_count,
+        avg_open_duration_hours=round(avg_open_hours, 2) if avg_open_hours is not None else None,
+        pending_samples=pending_samples_total,
+        pending_tests=pending_tests_total,
+        last_updated_at=datetime.now(timezone.utc),
+    )
+
+    customer_summary = CustomerSummaryInfo(
+        id=customer.id,
+        name=customer.name,
+        primary_alias=_select_primary_alias(customer.aliases, customer.name),
+        last_order_at=last_order_at,
+        sla_hours=sla_hours,
+    )
+
+    top_pending_block = None
+    if include_samples or include_tests:
+        top_pending_block = CustomerOrdersTopPending(matrices=top_matrices, tests=top_tests)
+
+    response = CustomerOrdersSummaryResponse(
+        matched_customer=matched_customer_payload,
+        customer=customer_summary,
+        metrics=metrics,
+        orders=orders_payload,
+        top_pending=top_pending_block,
+    )
+    return response

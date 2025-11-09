@@ -8,7 +8,16 @@ from downloader_qbench_data.api.dependencies import get_db_session
 from downloader_qbench_data.api.schemas import (
     CustomerAlertItem,
     CustomerAlertsResponse,
+    CustomerLookupMatch,
+    CustomerMatchedInfo,
     CustomerHeatmapPoint,
+    CustomerOrderItem,
+    CustomerOrderMetrics,
+    CustomerOrdersSummaryResponse,
+    CustomerOrdersTopPending,
+    CustomerSummaryInfo,
+    CustomerTopPendingMatrix,
+    CustomerTopPendingTest,
     DailyActivityPoint,
     DailyActivityResponse,
     DailyTATPoint,
@@ -207,6 +216,73 @@ def test_tests_tat_daily_endpoint(monkeypatch):
     resp = client.get("/api/v1/metrics/tests/tat-daily")
     assert resp.status_code == 200
     assert resp.json()["points"][0]["within_sla"] == 30
+
+
+def test_customer_orders_summary_endpoint(monkeypatch):
+    response_payload = CustomerOrdersSummaryResponse(
+        matched_customer=CustomerMatchedInfo(id=742, name="La Casa de las Flores", aliases=["Casa Flores"], match_score=0.94),
+        customer=CustomerSummaryInfo(
+            id=742,
+            name="La Casa de las Flores",
+            primary_alias="Casa Flores",
+            last_order_at=datetime(2025, 11, 6, 18, 40, tzinfo=timezone.utc),
+            sla_hours=36,
+        ),
+        metrics=CustomerOrderMetrics(
+            total_orders=12,
+            open_orders=4,
+            overdue_orders=1,
+            warning_orders=1,
+            avg_open_duration_hours=28.5,
+            pending_samples=9,
+            pending_tests=34,
+            last_updated_at=datetime(2025, 11, 9, 12, 0, tzinfo=timezone.utc),
+        ),
+        orders=[
+            CustomerOrderItem(
+                order_id=90124,
+                state="in_progress",
+                age_days=3,
+                sla_status="warning",
+                date_created=datetime(2025, 11, 6, 9, 12, tzinfo=timezone.utc),
+                pending_samples=2,
+                pending_tests=7,
+            )
+        ],
+        top_pending=CustomerOrdersTopPending(
+            matrices=[CustomerTopPendingMatrix(matrix_type="Blood", pending_samples=5)],
+            tests=[CustomerTopPendingTest(label_abbr="HEM", pending_tests=12)],
+        ),
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_customer_orders_summary",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/customers/orders/summary?customer_id=742")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["metrics"]["open_orders"] == 4
+    assert body["orders"][0]["order_id"] == 90124
+
+
+def test_customer_orders_summary_matches(monkeypatch):
+    response_payload = CustomerOrdersSummaryResponse(
+        matches=[
+            CustomerLookupMatch(id=742, name="La Casa de las Flores", alias="Casa Flores", match_score=0.9),
+            CustomerLookupMatch(id=351, name="Flores del Valle", alias=None, match_score=0.7),
+        ]
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_customer_orders_summary",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/customers/orders/summary?customer_name=Casa&match_strategy=all")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["matches"]) == 2
+    assert data["matches"][0]["id"] == 742
 
 
 def test_samples_overview_endpoint(monkeypatch):

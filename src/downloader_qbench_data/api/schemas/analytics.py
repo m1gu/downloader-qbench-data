@@ -171,6 +171,81 @@ class QualityKpisResponse(BaseModel):
     orders: QualityKpiOrders
 
 
+class CustomerLookupMatch(BaseModel):
+    id: int
+    name: str
+    alias: Optional[str] = Field(None, description="Alias that matched the lookup term, if any")
+    match_score: float = Field(..., ge=0.0, le=1.0)
+
+
+class CustomerMatchedInfo(BaseModel):
+    id: int
+    name: str
+    aliases: list[str] = Field(default_factory=list)
+    match_score: float = Field(..., ge=0.0, le=1.0)
+
+
+class CustomerSummaryInfo(BaseModel):
+    id: int
+    name: str
+    primary_alias: Optional[str] = None
+    last_order_at: Optional[datetime] = None
+    sla_hours: float
+
+
+class CustomerOrderMetrics(BaseModel):
+    total_orders: int
+    open_orders: int
+    overdue_orders: int
+    warning_orders: int
+    avg_open_duration_hours: Optional[float] = Field(
+        None, description="Average hours elapsed for currently open orders"
+    )
+    pending_samples: Optional[int] = Field(
+        None, description="Pending samples for the customer when include_samples=true"
+    )
+    pending_tests: Optional[int] = Field(
+        None, description="Pending tests for the customer when include_tests=true"
+    )
+    last_updated_at: datetime
+
+
+class CustomerOrderItem(BaseModel):
+    order_id: int
+    state: Optional[str] = None
+    age_days: int = Field(..., ge=0)
+    sla_status: str = Field(..., description="ok, warning or overdue")
+    date_created: Optional[datetime] = None
+    pending_samples: Optional[int] = None
+    pending_tests: Optional[int] = None
+
+
+class CustomerTopPendingMatrix(BaseModel):
+    matrix_type: Optional[str] = None
+    pending_samples: int
+
+
+class CustomerTopPendingTest(BaseModel):
+    label_abbr: Optional[str] = None
+    pending_tests: int
+
+
+class CustomerOrdersTopPending(BaseModel):
+    matrices: list[CustomerTopPendingMatrix] = Field(default_factory=list)
+    tests: list[CustomerTopPendingTest] = Field(default_factory=list)
+
+
+class CustomerOrdersSummaryResponse(BaseModel):
+    matches: Optional[list[CustomerLookupMatch]] = Field(
+        None, description="Returned when match_strategy=all to help pick a customer"
+    )
+    matched_customer: Optional[CustomerMatchedInfo] = None
+    customer: Optional[CustomerSummaryInfo] = None
+    metrics: Optional[CustomerOrderMetrics] = None
+    orders: Optional[list[CustomerOrderItem]] = None
+    top_pending: Optional[CustomerOrdersTopPending] = None
+
+
 class OverdueOrdersKpis(BaseModel):
     total_overdue: int = Field(..., description="Orders older than the minimum overdue window")
     average_open_hours: Optional[float] = Field(None, description="Average open hours for overdue orders")

@@ -21,6 +21,12 @@ class Customer(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    aliases: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
     date_created: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     raw_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(

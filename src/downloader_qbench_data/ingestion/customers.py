@@ -124,6 +124,7 @@ def sync_customers(
                         {
                             "id": customer_id,
                             "name": name,
+                            "aliases": [name],
                             "date_created": created_at,
                             "raw_payload": item,
                         }
