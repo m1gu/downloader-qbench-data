@@ -26,6 +26,9 @@ from downloader_qbench_data.api.schemas import (
     MetricsSummaryResponse,
     NewCustomerItem,
     NewCustomersResponse,
+    OrderDetailResponse,
+    OrderSampleItem,
+    OrderSampleTestItem,
     OrdersFunnelResponse,
     OrdersFunnelStage,
     OrdersSlowestResponse,
@@ -46,7 +49,9 @@ from downloader_qbench_data.api.schemas import (
     QualityKpiTests,
     QualityKpisResponse,
     ReportsOverviewResponse,
+    SampleBatchItem,
     SampleDetailResponse,
+    SampleTestItem,
     SamplesCycleMatrixItem,
     SamplesCycleTimePoint,
     SamplesCycleTimeResponse,
@@ -55,6 +60,8 @@ from downloader_qbench_data.api.schemas import (
     SamplesOverviewKPI,
     SamplesOverviewResponse,
     SlowOrderItem,
+    SyncStatusResponse,
+    TestBatchItem,
     TestDetailResponse,
     TestStateBucket,
     TestStatePoint,
@@ -73,7 +80,6 @@ from downloader_qbench_data.api.schemas import (
     TimeSeriesPoint,
     TopCustomerItem,
     TopCustomersResponse,
-    SyncStatusResponse,
 )
 
 
@@ -741,21 +747,17 @@ def test_quality_kpis_endpoint(monkeypatch):
 
 def test_get_sample_detail(monkeypatch):
     response_payload = SampleDetailResponse(
-        id=1,
-        sample_name="Sample A",
-        custom_formatted_id="S-001",
-        order_id=10,
-        has_report=True,
-        batch_ids=[5],
-        completed_date=None,
-        date_created=None,
-        start_date=None,
-        matrix_type="Blood",
-        state="completed",
-        test_count=3,
-        raw_payload={"id": 1},
-        order={"id": 10, "custom_formatted_id": "O-10", "state": "completed"},
-        batches=[{"id": 5, "display_name": "Batch 1"}],
+        sample={
+            "id": 1,
+            "sample_name": "Sample A",
+            "order_id": 10,
+            "state": "completed",
+            "sla_status": "ok",
+            "sla_hours": 48,
+        },
+        order={"id": 10, "state": "completed"},
+        tests=None,
+        batches=[SampleBatchItem(id=5, display_name="Batch 1")],
     )
     monkeypatch.setattr(
         "downloader_qbench_data.api.routers.entities.entities_service.get_sample_detail",
@@ -764,7 +766,7 @@ def test_get_sample_detail(monkeypatch):
     client = create_test_client(monkeypatch)
     resp = client.get("/api/v1/entities/samples/1")
     assert resp.status_code == 200
-    assert resp.json()["sample_name"] == "Sample A"
+    assert resp.json()["sample"]["sample_name"] == "Sample A"
 
 
 def test_get_sample_detail_not_found(monkeypatch):
@@ -779,19 +781,16 @@ def test_get_sample_detail_not_found(monkeypatch):
 
 def test_get_test_detail(monkeypatch):
     response_payload = TestDetailResponse(
-        id=1,
-        sample_id=1,
-        batch_ids=[5],
-        date_created=None,
-        state="complete",
-        has_report=True,
-        report_completed_date=None,
-        label_abbr="PCR",
-        title="PCR Test",
-        worksheet_raw={},
-        raw_payload={"id": 1},
+        test={
+            "id": 1,
+            "label_abbr": "PCR",
+            "state": "complete",
+            "sla_status": "ok",
+            "sla_hours": 48,
+        },
         sample={"id": 1, "sample_name": "Sample A", "state": "complete"},
-        batches=[{"id": 5, "display_name": "Batch 1"}],
+        order={"id": 10, "state": "completed"},
+        batches=[TestBatchItem(id=5, display_name="Batch 1")],
     )
     monkeypatch.setattr(
         "downloader_qbench_data.api.routers.entities.entities_service.get_test_detail",
@@ -800,7 +799,7 @@ def test_get_test_detail(monkeypatch):
     client = create_test_client(monkeypatch)
     resp = client.get("/api/v1/entities/tests/1")
     assert resp.status_code == 200
-    assert resp.json()["label_abbr"] == "PCR"
+    assert resp.json()["test"]["label_abbr"] == "PCR"
 
 
 def test_get_test_detail_not_found(monkeypatch):
@@ -811,3 +810,80 @@ def test_get_test_detail_not_found(monkeypatch):
     client = create_test_client(monkeypatch)
     resp = client.get("/api/v1/entities/tests/999")
     assert resp.status_code == 404
+
+
+def test_get_sample_detail_full(monkeypatch):
+    response_payload = SampleDetailResponse(
+        sample={
+            "id": 2,
+            "sample_name": "Full Sample",
+            "order_id": 20,
+            "state": "created",
+            "sla_status": "warning",
+            "sla_hours": 24,
+        },
+        order={"id": 20, "state": "created"},
+        tests=[SampleTestItem(id=11, label_abbr="CN", state="WEIGHED", has_report=False)],
+        batches=[SampleBatchItem(id=7, display_name="Batch 7")],
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.entities.entities_service.get_sample_detail",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/entities/samples/2/full?include_tests=true")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sample"]["sla_status"] == "warning"
+    assert body["tests"][0]["label_abbr"] == "CN"
+
+
+def test_get_test_detail_full(monkeypatch):
+    response_payload = TestDetailResponse(
+        test={"id": 555, "state": "WEIGHED", "sla_status": "overdue", "sla_hours": 36},
+        sample={"id": 2, "sample_name": "Full Sample"},
+        order={"id": 20, "state": "CREATED"},
+        batches=[TestBatchItem(id=9, display_name="Batch X")],
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.entities.entities_service.get_test_detail",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/entities/tests/555/full?sla_hours=36")
+    assert resp.status_code == 200
+    assert resp.json()["test"]["sla_status"] == "overdue"
+
+
+def test_get_order_detail(monkeypatch):
+    response_payload = OrderDetailResponse(
+        order={
+            "id": 3442,
+            "state": "CREATED",
+            "sla_status": "overdue",
+            "sla_hours": 48,
+            "pending_samples": 1,
+        },
+        customer={"id": 386},
+        samples=[
+            OrderSampleItem(
+                id=16158,
+                sample_name="Fruit Chew",
+                state="CREATED",
+                pending_tests=3,
+                tests=[
+                    OrderSampleTestItem(id=55506, label_abbr="CN", state="WEIGHED", has_report=False),
+                ],
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.entities.entities_service.get_order_detail",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/entities/orders/3442?include_tests=true")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["order"]["id"] == 3442
+    assert body["samples"][0]["tests"][0]["label_abbr"] == "CN"
