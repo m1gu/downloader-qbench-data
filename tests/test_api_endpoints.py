@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from downloader_qbench_data.api import create_app
-from downloader_qbench_data.api.dependencies import get_db_session
+from downloader_qbench_data.api.dependencies import get_db_session, require_active_user
 from downloader_qbench_data.api.schemas import (
     CustomerAlertItem,
     CustomerAlertsResponse,
@@ -88,6 +89,7 @@ def create_test_client(monkeypatch):
     def _dummy_session():
         yield object()
     app.dependency_overrides[get_db_session] = _dummy_session
+    app.dependency_overrides[require_active_user] = lambda: SimpleNamespace(username="tester")
     client = TestClient(app)
     return client
 

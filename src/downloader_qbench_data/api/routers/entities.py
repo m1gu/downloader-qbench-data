@@ -5,11 +5,15 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.orm import Session
 
-from ..dependencies import get_db_session
+from ..dependencies import get_db_session, require_active_user
 from ..schemas.entities import OrderDetailResponse, SampleDetailResponse, TestDetailResponse
 from ..services import entities as entities_service
 
-router = APIRouter(prefix="/entities", tags=["entities"])
+router = APIRouter(
+    prefix="/entities",
+    tags=["entities"],
+    dependencies=[Depends(require_active_user)],
+)
 
 
 @router.get("/orders/{order_id}", response_model=OrderDetailResponse)

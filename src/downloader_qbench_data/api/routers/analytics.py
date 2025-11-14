@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..dependencies import get_db_session
+from ..dependencies import get_db_session, require_active_user
 from ..schemas.analytics import (
     CustomerAlertsResponse,
     OrdersFunnelResponse,
@@ -32,7 +32,11 @@ from ..services.analytics import (
     get_tests_state_distribution,
 )
 
-router = APIRouter(prefix="/analytics", tags=["analytics"])
+router = APIRouter(
+    prefix="/analytics",
+    tags=["analytics"],
+    dependencies=[Depends(require_active_user)],
+)
 
 
 @router.get("/orders/throughput", response_model=OrdersThroughputResponse)

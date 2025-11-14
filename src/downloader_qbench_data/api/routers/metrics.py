@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from ..dependencies import get_db_session
+from ..dependencies import get_db_session, require_active_user
 from ..schemas.metrics import (
     DailyActivityResponse,
     MetricsFiltersResponse,
@@ -40,7 +40,11 @@ from ..services.metrics import (
     get_sync_status,
 )
 
-router = APIRouter(prefix="/metrics", tags=["metrics"])
+router = APIRouter(
+    prefix="/metrics",
+    tags=["metrics"],
+    dependencies=[Depends(require_active_user)],
+)
 
 
 @router.get("/summary", response_model=MetricsSummaryResponse)

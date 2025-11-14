@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from downloader_qbench_data.config import get_settings
-from .routers import analytics, entities, metrics
+from .routers import analytics, entities, metrics, auth as auth_router
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ def create_app() -> FastAPI:
     async def health_check() -> dict[str, str]:
         return {"status": "ok"}
 
+    app.include_router(auth_router.router, prefix="/api")
     app.include_router(metrics.router, prefix="/api/v1")
     app.include_router(analytics.router, prefix="/api/v1")
     app.include_router(entities.router, prefix="/api/v1")

@@ -8,6 +8,41 @@
 - **Documentación Interactiva**: `/api/docs` (Swagger UI)
 - **Documentación Alternativa**: `/api/redoc` (ReDoc)
 
+## Autenticación
+
+- Todos los endpoints bajo `/api/v1/...` requieren el encabezado `Authorization: Bearer <token>`.
+- Los tokens expiran según `AUTH_TOKEN_TTL_HOURS` (3 horas por defecto); al expirar, el cliente debe volver a autenticarse.
+- Tras 3 intentos fallidos el usuario se bloquea durante 24 horas; el desbloqueo se realiza con el script `scripts/manage_users.py reset-password --unlock`.
+
+### POST /api/auth/login
+Autentica un usuario y devuelve un token Bearer.
+
+**Body**
+```json
+{
+  "username": "mcrlabs",
+  "password": "********"
+}
+```
+
+**Respuesta exitosa**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_at": "2025-11-15T18:00:00Z",
+  "expires_in": 10800,
+  "user": {
+    "username": "mcrlabs"
+  }
+}
+```
+
+**Errores**
+- `401 invalid_credentials` cuando el usuario o la contraseña no son válidos.
+- `423 account_locked` cuando el usuario excedió los intentos fallidos; la respuesta incluye `locked_until`.
+
+---
 ---
 
 ## Endpoints de Salud

@@ -43,8 +43,16 @@ class AppSettings(BaseModel):
 
     qbench: QBenchSettings
     database: DatabaseSettings
+    auth: "AuthSettings"
     page_size: int = 50
     sync_lookback_days: int = 7
+
+
+class AuthSettings(BaseModel):
+    """Authentication-related settings."""
+
+    secret_key: str
+    token_ttl_hours: int = 3
 
 
 def _load_from_environment() -> AppSettings:
@@ -69,6 +77,10 @@ def _load_from_environment() -> AppSettings:
             user=os.environ["POSTGRES_USER"],
             password=os.environ["POSTGRES_PASSWORD"],
         )
+        auth = AuthSettings(
+            secret_key=os.environ["AUTH_SECRET_KEY"],
+            token_ttl_hours=int(os.getenv("AUTH_TOKEN_TTL_HOURS", "3")),
+        )
         page_size = int(os.getenv("PAGE_SIZE", "50"))
         sync_lookback_days = int(os.getenv("SYNC_LOOKBACK_DAYS", "7"))
     except KeyError as exc:
@@ -81,6 +93,7 @@ def _load_from_environment() -> AppSettings:
     return AppSettings(
         qbench=qbench,
         database=database,
+        auth=auth,
         page_size=page_size,
         sync_lookback_days=sync_lookback_days,
     )

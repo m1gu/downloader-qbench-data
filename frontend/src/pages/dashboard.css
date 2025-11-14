@@ -26,6 +26,33 @@
   gap: 12px;
 }
 
+.dashboard__session {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.dashboard__user {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.dashboard__logout {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #ffffff;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dashboard__logout:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
 .dashboard__badge {
   display: inline-flex;
   align-items: center;

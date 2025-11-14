@@ -4,6 +4,7 @@ import { parseISO } from 'date-fns'
 import { apiFetch } from '../lib/api'
 import { formatDateTimeShort } from '../utils/format'
 import './dashboard.css'
+import { useAuth } from '../features/auth/AuthContext'
 
 type NavItem = {
   label: string
@@ -19,6 +20,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export function DashboardPage() {
   const location = useLocation()
+  const { user, logout } = useAuth()
   const [syncLabel, setSyncLabel] = useState<string | null>(null)
 
   const heroCopy = useMemo(() => {
@@ -76,6 +78,12 @@ export function DashboardPage() {
           <div className="dashboard__identity">
             <span className="dashboard__environment">MCRLabs Metrics</span>
           </div>
+        </div>
+        <div className="dashboard__session">
+          {user && <span className="dashboard__user">User: {user}</span>}
+          <button type="button" className="dashboard__logout" onClick={logout}>
+            Sign out
+          </button>
         </div>
 
         <nav className="dashboard__tabs" aria-label="Dashboard sections">

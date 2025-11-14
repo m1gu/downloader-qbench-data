@@ -62,6 +62,7 @@ from .analytics import (
     TestsStateDistributionResponse,
 )
 from .entities import SampleDetailResponse, TestDetailResponse
+from .auth import AuthenticatedUser, LoginRequest, TokenResponse
 
 __all__ = [
     # Metrics
@@ -126,4 +127,8 @@ __all__ = [
     # Entities
     "SampleDetailResponse",
     "TestDetailResponse",
+    # Auth
+    "LoginRequest",
+    "TokenResponse",
+    "AuthenticatedUser",
 ]

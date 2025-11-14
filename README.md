@@ -32,8 +32,37 @@ copy .env.example .env
 # variables opcionales:
 #   SYNC_LOOKBACK_DAYS=7        # horizonte por defecto (en dÃ­as) para el pipeline de sincronizaciÃ³n ventana
 #   PAGE_SIZE=50                # tamaÃ±o base de pÃ¡gina (el valor real no excederÃ¡ el mÃ¡ximo permitido por QBench)
+#   AUTH_TOKEN_TTL_HOURS=3      # vigencia (horas) del token de autenticacion
+# variables obligatorias adicionales:
+#   AUTH_SECRET_KEY=coloca_un_valor_unico_y_secreto
 ```
    ```
+## Gestion de usuarios del dashboard
+
+La autenticacion del dashboard se administra con una tabla aislada (`users`). Para prepararla:
+
+1. Ejecuta el script SQL `docs/sql/create_users_table.sql` en tu base PostgreSQL (Query Tool de pgAdmin o `psql -f`). Crea la tabla y el trigger que mantiene `updated_at`.
+2. Usa el script `scripts/manage_users.py` para crear cuentas o restablecer contraseñas. Las contraseñas deben tener al menos 10 caracteres e incluir minusculas, mayusculas y digitos; se almacenan cifradas con `bcrypt`.
+
+```bash
+# Crear usuario (solicita contraseña de forma interactiva si se omite el flag)
+python scripts/manage_users.py create --username admin
+
+# Restablecer contraseña y limpiar bloqueos
+python scripts/manage_users.py reset-password --username admin --unlock
+
+# Pasar la contraseña por argumento (evita guardarla en historial compartido)
+python scripts/manage_users.py create --username ops --password "Str0ngPass123"
+```
+
+> La administracion se realiza exclusivamente via este script; el frontend no ofrece registro ni recuperacion.
+
+### Autenticacion via API
+- Endpoint: `POST /api/auth/login` (body con `username` y `password`).
+- Respuesta: token `bearer` con vigencia configurable (`AUTH_TOKEN_TTL_HOURS`, por defecto 3 horas).
+- Para acceder a `/api/v1/...` debes enviar `Authorization: Bearer <token>` en cada solicitud; al expirar, solicita uno nuevo.
+- Tras 3 intentos fallidos el usuario queda bloqueado por 24 horas (se desbloquea con `--unlock` en el script).
+
 ## Estructura del proyecto
 ```
 Downloader-Qbench-Data/
