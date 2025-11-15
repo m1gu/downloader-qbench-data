@@ -6,6 +6,9 @@ export interface PriorityFilters {
   interval: IntervalOption
   minDaysOverdue: number
   slaHours: number
+  slowCustomerQuery: string
+  slowMinOpenHours: number
+  slowThresholdHours: number
 }
 
 export interface PriorityKpis {
@@ -91,4 +94,30 @@ export interface PriorityOrdersData {
   timeline: TimelinePoint[]
   heatmap: HeatmapData
   stateBreakdown: StateBreakdownItem[]
+  slowReported: SlowReportedOrdersData
+}
+
+export interface SlowReportedOrdersStats {
+  totalOrders: number
+  averageOpenHours: number | null
+  percentile95OpenHours: number | null
+  thresholdHours: number | null
+}
+
+export interface SlowReportedOrder {
+  id: number
+  reference: string
+  customer: string
+  createdAt: Date | null
+  reportedAt: Date | null
+  samplesCount: number
+  testsCount: number
+  openTimeHours: number
+  openTimeLabel: string
+  isOutlier: boolean
+}
+
+export interface SlowReportedOrdersData {
+  stats: SlowReportedOrdersStats
+  orders: SlowReportedOrder[]
 }

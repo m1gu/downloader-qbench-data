@@ -33,6 +33,9 @@ from ..schemas.analytics import (
     QualityKpiTests,
     QualityKpisResponse,
     SlowOrderItem,
+    SlowReportedOrderItem,
+    SlowReportedOrdersResponse,
+    SlowReportedOrdersStats,
     SamplesCycleMatrixItem,
     SamplesCycleTimePoint,
     SamplesCycleTimeResponse,
@@ -59,6 +62,19 @@ def _normalise_interval(interval: Optional[str]) -> str:
 
 def _epoch_hours(expr) -> any:
     return func.extract("epoch", expr) / 3600.0
+
+
+def _format_open_time_label(hours: Optional[float]) -> str:
+    if hours is None:
+        return "--"
+    clamped = max(0.0, float(hours))
+    total_hours = int(round(clamped))
+    days, remaining_hours = divmod(total_hours, 24)
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}d")
+    parts.append(f"{remaining_hours}h")
+    return " ".join(parts)
 
 
 def _convert_period(period_value) -> datetime.date:
@@ -874,6 +890,108 @@ def get_overdue_orders(
         state_breakdown=breakdown,
         ready_to_report_samples=ready_samples,
     )
+
+
+def get_priority_slowest_reported_orders(
+    session: Session,
+    *,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    customer_query: Optional[str] = None,
+    min_open_hours: float = 0.0,
+    highlight_threshold_hours: Optional[float] = None,
+    limit: int = 25,
+) -> SlowReportedOrdersResponse:
+    """Return reported orders with the longest open time within the requested window."""
+
+    effective_limit = max(1, min(limit, 200))
+    end_dt = date_to or datetime.now(timezone.utc)
+    start_dt = date_from or (end_dt - timedelta(days=30))
+    min_open = max(0.0, float(min_open_hours))
+    threshold = (
+        max(0.0, float(highlight_threshold_hours))
+        if highlight_threshold_hours is not None
+        else 120.0
+    )
+
+    open_hours_expr = _epoch_hours(Order.date_order_reported - Order.date_created)
+    conditions = _daterange_conditions(Order.date_order_reported, start_dt, end_dt)
+    conditions.extend([Order.date_order_reported.isnot(None), Order.date_created.isnot(None)])
+    if min_open > 0:
+        conditions.append(open_hours_expr >= min_open)
+
+    if customer_query:
+        query_value = customer_query.strip()
+        if query_value:
+            filters = []
+            try:
+                filters.append(Order.customer_account_id == int(query_value))
+            except ValueError:
+                pass
+            filters.append(Customer.name.ilike(f"%{query_value}%"))
+            conditions.append(or_(*filters))
+
+    stats_stmt = (
+        select(
+            func.count().label("total"),
+            func.avg(open_hours_expr).label("avg"),
+            func.percentile_cont(0.95).within_group(open_hours_expr).label("p95"),
+        )
+        .select_from(Order)
+        .join(Customer, Customer.id == Order.customer_account_id, isouter=True)
+        .where(*conditions)
+    )
+    stats_row = session.execute(stats_stmt).one()
+    total_orders = int(stats_row.total or 0)
+    avg_hours = float(stats_row.avg) if stats_row.avg is not None else None
+    p95_hours = float(stats_row.p95) if stats_row.p95 is not None else None
+
+    stmt = (
+        select(
+            Order.id.label("order_id"),
+            func.coalesce(Order.custom_formatted_id, func.concat("ORD-", Order.id)).label("order_reference"),
+            Customer.name.label("customer_name"),
+            Order.date_created.label("date_created"),
+            Order.date_order_reported.label("date_reported"),
+            func.coalesce(Order.sample_count, literal(0)).label("samples_count"),
+            func.coalesce(Order.test_count, literal(0)).label("tests_count"),
+            open_hours_expr.label("open_hours"),
+        )
+        .select_from(Order)
+        .join(Customer, Customer.id == Order.customer_account_id, isouter=True)
+        .where(*conditions)
+        .order_by(open_hours_expr.desc(), Order.date_order_reported.desc())
+        .limit(effective_limit)
+    )
+
+    rows = session.execute(stmt)
+    items: list[SlowReportedOrderItem] = []
+    for row in rows:
+        open_hours_value = float(row.open_hours) if row.open_hours is not None else 0.0
+        label = _format_open_time_label(open_hours_value)
+        is_outlier = threshold is not None and open_hours_value >= threshold
+        items.append(
+            SlowReportedOrderItem(
+                order_id=row.order_id,
+                order_reference=row.order_reference,
+                customer_name=row.customer_name,
+                date_created=row.date_created,
+                date_reported=row.date_reported,
+                samples_count=int(row.samples_count or 0),
+                tests_count=int(row.tests_count or 0),
+                open_time_hours=open_hours_value,
+                open_time_label=label,
+                is_outlier=is_outlier,
+            )
+        )
+
+    stats = SlowReportedOrdersStats(
+        total_orders=total_orders,
+        average_open_hours=avg_hours,
+        percentile_95_open_hours=p95_hours,
+        threshold_hours=threshold,
+    )
+    return SlowReportedOrdersResponse(stats=stats, items=items)
 
 
 def get_customer_alerts(

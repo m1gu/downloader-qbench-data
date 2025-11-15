@@ -9,6 +9,7 @@ import type {
   PriorityOrdersData,
   PriorityKpis,
   ReadySample,
+  SlowReportedOrdersData,
   StateBreakdownItem,
   TimelinePoint,
   WarningOrder,
@@ -96,6 +97,27 @@ interface OverdueOrdersResponse {
     state: string | null
     count: number
     ratio: number
+  }>
+}
+
+interface SlowReportedOrdersResponse {
+  stats: {
+    total_orders: number
+    average_open_hours: number | null
+    percentile_95_open_hours: number | null
+    threshold_hours: number | null
+  }
+  items: Array<{
+    order_id: number
+    order_reference: string
+    customer_name: string | null
+    date_created: string | null
+    date_reported: string | null
+    samples_count: number | null
+    tests_count: number | null
+    open_time_hours: number
+    open_time_label: string
+    is_outlier: boolean
   }>
 }
 
@@ -238,26 +260,60 @@ function mapStateBreakdown(entries: OverdueOrdersResponse['state_breakdown']): S
   }))
 }
 
+function mapSlowReportedOrders(response: SlowReportedOrdersResponse): SlowReportedOrdersData {
+  return {
+    stats: {
+      totalOrders: response.stats.total_orders,
+      averageOpenHours: response.stats.average_open_hours,
+      percentile95OpenHours: response.stats.percentile_95_open_hours,
+      thresholdHours: response.stats.threshold_hours,
+    },
+    orders: response.items.map((item) => ({
+      id: item.order_id,
+      reference: item.order_reference,
+      customer: item.customer_name || '--',
+      createdAt: item.date_created ? parseISO(item.date_created) : null,
+      reportedAt: item.date_reported ? parseISO(item.date_reported) : null,
+      samplesCount: item.samples_count ?? 0,
+      testsCount: item.tests_count ?? 0,
+      openTimeHours: item.open_time_hours ?? 0,
+      openTimeLabel: item.open_time_label || '--',
+      isOutlier: Boolean(item.is_outlier),
+    })),
+  }
+}
+
 export async function fetchPriorityOrders(filters: PriorityFilters): Promise<PriorityOrdersData> {
-  const response = await apiFetch<OverdueOrdersResponse>('/analytics/orders/overdue', {
-    date_from: filters.dateFrom,
-    date_to: filters.dateTo,
-    interval: filters.interval,
-    min_days_overdue: filters.minDaysOverdue,
-    warning_window_days: DEFAULT_WARNING_WINDOW,
-    sla_hours: filters.slaHours,
-    top_limit: 20,
-    client_limit: 20,
-    warning_limit: 10,
-  })
+  const [overdueResponse, slowResponse] = await Promise.all([
+    apiFetch<OverdueOrdersResponse>('/analytics/orders/overdue', {
+      date_from: filters.dateFrom,
+      date_to: filters.dateTo,
+      interval: filters.interval,
+      min_days_overdue: filters.minDaysOverdue,
+      warning_window_days: DEFAULT_WARNING_WINDOW,
+      sla_hours: filters.slaHours,
+      top_limit: 20,
+      client_limit: 20,
+      warning_limit: 10,
+    }),
+    apiFetch<SlowReportedOrdersResponse>('/analytics/priority-orders/slowest', {
+      date_from: filters.dateFrom,
+      date_to: filters.dateTo,
+      customer_query: filters.slowCustomerQuery || undefined,
+      min_open_hours: filters.slowMinOpenHours,
+      outlier_threshold_hours: filters.slowThresholdHours,
+      limit: 25,
+    }),
+  ])
 
   return {
-    kpis: buildKpis(response),
-    topOrders: mapOrders(response.top_orders, response.sla_hours),
-    warningOrders: mapWarnings(response.warning_orders, response.sla_hours),
-    readySamples: mapReadySamples(response.ready_to_report_samples),
-    timeline: mapTimeline(response.timeline),
-    heatmap: mapHeatmap(response.heatmap),
-    stateBreakdown: mapStateBreakdown(response.state_breakdown),
+    kpis: buildKpis(overdueResponse),
+    topOrders: mapOrders(overdueResponse.top_orders, overdueResponse.sla_hours),
+    warningOrders: mapWarnings(overdueResponse.warning_orders, overdueResponse.sla_hours),
+    readySamples: mapReadySamples(overdueResponse.ready_to_report_samples),
+    timeline: mapTimeline(overdueResponse.timeline),
+    heatmap: mapHeatmap(overdueResponse.heatmap),
+    stateBreakdown: mapStateBreakdown(overdueResponse.state_breakdown),
+    slowReported: mapSlowReportedOrders(slowResponse),
   }
 }

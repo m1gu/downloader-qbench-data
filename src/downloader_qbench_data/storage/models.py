@@ -93,6 +93,7 @@ class Sample(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     sample_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     custom_formatted_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metrc_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     order_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("orders.id", deferrable=True, initially="DEFERRED"), nullable=False
     )

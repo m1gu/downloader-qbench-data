@@ -185,6 +185,7 @@ def sync_samples(
                         "id": item["id"],
                         "sample_name": item.get("sample_name") or item.get("description"),
                         "custom_formatted_id": item.get("custom_formatted_id"),
+                        "metrc_id": item.get("leaf_id"),
                         "order_id": order_id,
                         "has_report": bool(item.get("has_report")),
                         "batch_ids": ensure_int_list(item.get("batches")),
@@ -248,6 +249,7 @@ def _persist_batch(
             update_stmt = {
                 "sample_name": insert_stmt.excluded.sample_name,
                 "custom_formatted_id": insert_stmt.excluded.custom_formatted_id,
+                "metrc_id": insert_stmt.excluded.metrc_id,
                 "order_id": insert_stmt.excluded.order_id,
                 "has_report": insert_stmt.excluded.has_report,
                 "batch_ids": insert_stmt.excluded.batch_ids,

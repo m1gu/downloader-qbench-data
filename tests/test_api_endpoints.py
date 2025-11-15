@@ -61,6 +61,9 @@ from downloader_qbench_data.api.schemas import (
     SamplesOverviewKPI,
     SamplesOverviewResponse,
     SlowOrderItem,
+    SlowReportedOrderItem,
+    SlowReportedOrdersResponse,
+    SlowReportedOrdersStats,
     SyncStatusResponse,
     TestBatchItem,
     TestDetailResponse,
@@ -517,6 +520,41 @@ def test_orders_slowest_endpoint(monkeypatch):
     resp = client.get("/api/v1/analytics/orders/slowest?limit=3")
     assert resp.status_code == 200
     assert resp.json()["items"][0]["order_reference"] == "bucket-2025-10-06"
+
+
+def test_priority_orders_slowest_endpoint(monkeypatch):
+    response_payload = SlowReportedOrdersResponse(
+        stats=SlowReportedOrdersStats(
+            total_orders=2,
+            average_open_hours=90.0,
+            percentile_95_open_hours=120.0,
+            threshold_hours=96.0,
+        ),
+        items=[
+            SlowReportedOrderItem(
+                order_id=901,
+                order_reference="ORD-901",
+                customer_name="Slow Labs",
+                date_created=datetime(2025, 10, 1, 8, 0, 0),
+                date_reported=datetime(2025, 10, 6, 10, 0, 0),
+                samples_count=4,
+                tests_count=12,
+                open_time_hours=122.0,
+                open_time_label="5d 2h",
+                is_outlier=True,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "downloader_qbench_data.api.routers.analytics.get_priority_slowest_reported_orders",
+        lambda *args, **kwargs: response_payload,
+    )
+    client = create_test_client(monkeypatch)
+    resp = client.get("/api/v1/analytics/priority-orders/slowest?min_open_hours=72")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["items"][0]["open_time_label"] == "5d 2h"
+    assert payload["stats"]["total_orders"] == 2
 
 
 def test_orders_overdue_endpoint(monkeypatch):

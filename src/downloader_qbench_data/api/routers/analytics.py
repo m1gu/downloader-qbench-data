@@ -13,6 +13,7 @@ from ..schemas.analytics import (
     CustomerAlertsResponse,
     OrdersFunnelResponse,
     OrdersSlowestResponse,
+    SlowReportedOrdersResponse,
     OrdersThroughputResponse,
     OverdueOrdersResponse,
     QualityKpisResponse,
@@ -23,6 +24,7 @@ from ..schemas.analytics import (
 from ..services.analytics import (
     get_customer_alerts,
     get_customer_orders_summary,
+    get_priority_slowest_reported_orders,
     get_orders_funnel,
     get_overdue_orders,
     get_slowest_orders,
@@ -146,6 +148,48 @@ def orders_slowest(
         date_to=date_to,
         customer_id=customer_id,
         state=state,
+        limit=limit,
+    )
+
+
+@router.get("/priority-orders/slowest", response_model=SlowReportedOrdersResponse)
+def priority_orders_slowest(
+    date_from: Optional[datetime] = Query(
+        None, description="Filter orders reported on/after this datetime"
+    ),
+    date_to: Optional[datetime] = Query(
+        None, description="Filter orders reported on/before this datetime"
+    ),
+    customer_query: Optional[str] = Query(
+        None, description="Customer identifier or name fragment to match"
+    ),
+    min_open_hours: float = Query(
+        0.0,
+        ge=0.0,
+        description="Only include orders whose open time (created -> reported) meets this threshold",
+    ),
+    limit: int = Query(
+        25,
+        ge=1,
+        le=100,
+        description="Maximum number of orders to return",
+    ),
+    outlier_threshold_hours: Optional[float] = Query(
+        120.0,
+        ge=0.0,
+        description="Highlight rows whose open time exceeds this threshold",
+    ),
+    session: Session = Depends(get_db_session),
+) -> SlowReportedOrdersResponse:
+    """Return reported orders ranked by how long they took to complete."""
+
+    return get_priority_slowest_reported_orders(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        customer_query=customer_query,
+        min_open_hours=min_open_hours,
+        highlight_threshold_hours=outlier_threshold_hours,
         limit=limit,
     )
 

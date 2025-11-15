@@ -87,6 +87,31 @@ class OrdersSlowestResponse(BaseModel):
     items: list[SlowOrderItem]
 
 
+class SlowReportedOrderItem(BaseModel):
+    order_id: int = Field(..., description="Internal order identifier")
+    order_reference: str = Field(..., description="Display-friendly order code")
+    customer_name: Optional[str] = Field(None, description="Customer linked to the order")
+    date_created: Optional[datetime] = Field(None, description="Order creation timestamp")
+    date_reported: Optional[datetime] = Field(None, description="Order reported timestamp")
+    samples_count: int = Field(..., description="Number of samples linked to the order")
+    tests_count: int = Field(..., description="Number of tests linked to the order")
+    open_time_hours: float = Field(..., description="Hours from creation to report")
+    open_time_label: str = Field(..., description="Human-readable open time representation (e.g. '3d 4h')")
+    is_outlier: bool = Field(False, description="Whether the order exceeds the configured threshold")
+
+
+class SlowReportedOrdersStats(BaseModel):
+    total_orders: int = Field(..., description="Orders included in the lookback window after filters")
+    average_open_hours: Optional[float] = Field(None, description="Average open hours for the filtered set")
+    percentile_95_open_hours: Optional[float] = Field(None, description="95th percentile open hours for the filtered set")
+    threshold_hours: Optional[float] = Field(None, description="Threshold used to highlight outliers")
+
+
+class SlowReportedOrdersResponse(BaseModel):
+    stats: SlowReportedOrdersStats
+    items: list[SlowReportedOrderItem]
+
+
 class CustomerHeatmapPoint(BaseModel):
     customer_id: int = Field(..., description="Customer identifier")
     customer_name: Optional[str] = Field(None, description="Customer display name")

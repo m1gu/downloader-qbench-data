@@ -18,8 +18,13 @@ import '../overview/overview.css'
 const LOOKBACK_DAYS = 30
 const DEFAULT_MIN_DAYS = 4
 const DEFAULT_SLA_HOURS = 120
+const DEFAULT_SLOW_MIN_HOURS = 72
+const DEFAULT_SLOW_THRESHOLD_HOURS = 120
 
-type FormState = Pick<PriorityFilters, 'minDaysOverdue' | 'slaHours'>
+type FormState = Pick<
+  PriorityFilters,
+  'minDaysOverdue' | 'slaHours' | 'slowCustomerQuery' | 'slowMinOpenHours' | 'slowThresholdHours'
+>
 
 const STATE_VARIANT_MAP: Record<string, string> = {
   'NOT STARTED': 'priority__state--pending',
@@ -64,6 +69,9 @@ export function PriorityOrdersTab() {
   const [formState, setFormState] = React.useState<FormState>({
     minDaysOverdue: DEFAULT_MIN_DAYS,
     slaHours: DEFAULT_SLA_HOURS,
+    slowCustomerQuery: '',
+    slowMinOpenHours: DEFAULT_SLOW_MIN_HOURS,
+    slowThresholdHours: DEFAULT_SLOW_THRESHOLD_HOURS,
   })
   const [filters, setFilters] = React.useState<PriorityFilters>({
     dateFrom: initialRange.from,
@@ -71,6 +79,9 @@ export function PriorityOrdersTab() {
     interval: 'day',
     minDaysOverdue: DEFAULT_MIN_DAYS,
     slaHours: DEFAULT_SLA_HOURS,
+    slowCustomerQuery: '',
+    slowMinOpenHours: DEFAULT_SLOW_MIN_HOURS,
+    slowThresholdHours: DEFAULT_SLOW_THRESHOLD_HOURS,
   })
   const { data, loading, error, refresh } = usePriorityOrders(filters)
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
@@ -108,27 +119,52 @@ export function PriorityOrdersTab() {
       interval: 'day',
       minDaysOverdue: formState.minDaysOverdue,
       slaHours: formState.slaHours,
+      slowCustomerQuery: formState.slowCustomerQuery.trim(),
+      slowMinOpenHours: formState.slowMinOpenHours,
+      slowThresholdHours: formState.slowThresholdHours,
     }
 
     const unchanged =
       filters.dateFrom === nextFilters.dateFrom &&
       filters.dateTo === nextFilters.dateTo &&
       filters.minDaysOverdue === nextFilters.minDaysOverdue &&
-      filters.slaHours === nextFilters.slaHours
+      filters.slaHours === nextFilters.slaHours &&
+      filters.slowCustomerQuery === nextFilters.slowCustomerQuery &&
+      filters.slowMinOpenHours === nextFilters.slowMinOpenHours &&
+      filters.slowThresholdHours === nextFilters.slowThresholdHours
 
     if (unchanged) {
       void refresh()
     } else {
       setFilters(nextFilters)
     }
-  }, [filters, formState.minDaysOverdue, formState.slaHours, refresh])
+  }, [
+    filters,
+    formState.minDaysOverdue,
+    formState.slaHours,
+    formState.slowCustomerQuery,
+    formState.slowMinOpenHours,
+    formState.slowThresholdHours,
+    refresh,
+  ])
 
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  type NumericField = 'minDaysOverdue' | 'slaHours' | 'slowMinOpenHours' | 'slowThresholdHours'
+
+  const handleNumberInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
     const parsed = Number.parseInt(value || '0', 10)
+    const key = name as NumericField
     setFormState((prev) => ({
       ...prev,
-      [name]: Number.isNaN(parsed) ? prev[name as keyof FormState] : parsed,
+      [key]: Number.isNaN(parsed) ? 0 : parsed,
+    }))
+  }
+
+  const handleTextInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target
+    setFormState((prev) => ({
+      ...prev,
+      [name]: value,
     }))
   }
 
@@ -144,6 +180,8 @@ export function PriorityOrdersTab() {
       })),
     })) as HeatMapSerie<DefaultHeatMapDatum, Record<string, never>>[]
   }, [heatmapData.customers, heatmapKeys])
+  const slowOrders = data?.slowReported.orders ?? []
+  const slowStats = data?.slowReported.stats
 
   const hasHeatmap = heatmapRows.length > 0
   const heatmapHeight = React.useMemo(() => {
@@ -186,7 +224,7 @@ export function PriorityOrdersTab() {
               min={0}
               step={1}
               value={formState.minDaysOverdue}
-              onChange={handleInputChange}
+              onChange={handleNumberInputChange}
             />
           </label>
           <label className="priority__field">
@@ -197,7 +235,7 @@ export function PriorityOrdersTab() {
               min={0}
               step={1}
               value={formState.slaHours}
-              onChange={handleInputChange}
+              onChange={handleNumberInputChange}
             />
           </label>
           <button className="priority__refresh" type="button" onClick={applyFilters} disabled={loading}>
@@ -405,6 +443,116 @@ export function PriorityOrdersTab() {
           </div>
         </div>
 
+        <div className="overview__card">
+          <CardHeader
+            title="Top Slowest Orders to Report"
+            subtitle="Reported orders with the longest open time in the last 30 days"
+          />
+          <div className="priority__slow-header">
+            <div className="priority__slow-kpis">
+              <KpiCard
+                label="Avg open time"
+                value={formatDurationValue(slowStats?.averageOpenHours)}
+                caption="Created → reported"
+              />
+              <KpiCard
+                label="95th percentile"
+                value={formatDurationValue(slowStats?.percentile95OpenHours)}
+                caption="Fastest way to spot outliers"
+              />
+              <KpiCard
+                label="Outlier threshold"
+                value={formatDurationValue(slowStats?.thresholdHours ?? formState.slowThresholdHours)}
+                caption={`Orders listed: ${slowStats?.totalOrders ?? 0}`}
+              />
+            </div>
+            <div className="priority__slow-filters">
+              <label className="priority__field">
+                <span>Customer (ID or name)</span>
+                <input
+                  type="text"
+                  name="slowCustomerQuery"
+                  placeholder="e.g. 174 or Bloom"
+                  value={formState.slowCustomerQuery}
+                  onChange={handleTextInputChange}
+                />
+              </label>
+              <label className="priority__field">
+                <span>Open time ≥ (hours)</span>
+                <input
+                  type="number"
+                  name="slowMinOpenHours"
+                  min={0}
+                  step={1}
+                  value={formState.slowMinOpenHours}
+                  onChange={handleNumberInputChange}
+                />
+              </label>
+              <label className="priority__field">
+                <span>Outlier threshold (hours)</span>
+                <input
+                  type="number"
+                  name="slowThresholdHours"
+                  min={0}
+                  step={1}
+                  value={formState.slowThresholdHours}
+                  onChange={handleNumberInputChange}
+                />
+              </label>
+              <button
+                type="button"
+                className="priority__slow-refresh"
+                onClick={applyFilters}
+                disabled={loading}
+              >
+                {loading ? 'Updating...' : 'Update list'}
+              </button>
+            </div>
+          </div>
+          <div className="overview__table-wrapper priority__table priority__table--slow">
+            <table>
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Customer</th>
+                  <th>Created</th>
+                  <th>Reported</th>
+                  <th>Open time</th>
+                  <th>Open time (hrs)</th>
+                  <th>Samples</th>
+                  <th>Tests</th>
+                </tr>
+              </thead>
+              <tbody>
+                {slowOrders.length ? (
+                  slowOrders.map((order) => (
+                    <tr
+                      key={order.id}
+                      className={order.isOutlier ? 'priority__slow-row priority__slow-row--outlier' : 'priority__slow-row'}
+                    >
+                      <td className="priority__order-ref">{order.reference}</td>
+                      <td>{order.customer}</td>
+                      <td>{formatDateTimeLabel(order.createdAt)}</td>
+                      <td>{formatDateTimeLabel(order.reportedAt)}</td>
+                      <td>
+                        <div className="priority__slow-open">
+                          <span>{order.openTimeLabel}</span>
+                          {order.isOutlier ? <span className="priority__slow-flag">Outlier</span> : null}
+                        </div>
+                      </td>
+                      <td>{formatNumber(order.openTimeHours, 1)}</td>
+                      <td>{order.samplesCount}</td>
+                      <td>{order.testsCount}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <EmptyTable loading={loading} colSpan={8} />
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <div className="overview__card overview__card--full">
           <CardHeader title="Overdue heatmap (customers × period)" subtitle="Weekly hotspots of overdue orders" />
           <div className="priority__heatmap" style={{ height: heatmapHeight }}>
@@ -490,6 +638,11 @@ const HeatmapTooltip: React.FC<TooltipProps<DefaultHeatMapDatum>> = ({ cell }) =
     <div>{cell.value ? `${cell.value} overdue` : 'No overdue orders'}</div>
   </div>
 )
+
+function formatDurationValue(hours: number | null | undefined): string {
+  if (hours === null || hours === undefined) return '--'
+  return formatHoursToDuration(hours)
+}
 
 type KpiCardProps = {
   label: string
