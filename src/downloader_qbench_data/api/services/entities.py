@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from downloader_qbench_data.storage import Batch, Customer, Order, Sample, Test
+from downloader_qbench_data.bans import is_banned
 from ..schemas.entities import (
     OrderDetailResponse,
     OrderSampleItem,
@@ -48,8 +49,12 @@ def get_order_detail(
     include_samples: bool = True,
     include_tests: bool = False,
 ) -> Optional[OrderDetailResponse]:
+    if is_banned(session, "order", order_id):
+        return None
     order = session.get(Order, order_id)
     if not order:
+        return None
+    if is_banned(session, "customer", order.customer_account_id):
         return None
 
     age_hours = _age_hours(order.date_created)
@@ -81,11 +86,15 @@ def get_order_detail(
 
     samples_payload: list[OrderSampleItem] | None = None
     if include_samples:
-        sample_rows = session.execute(
-            select(Sample.id, Sample.sample_name, Sample.state, Sample.has_report)
-            .where(Sample.order_id == order.id)
-            .order_by(Sample.date_created.desc().nullslast())
-        ).all()
+        sample_rows = [
+            row
+            for row in session.execute(
+                select(Sample.id, Sample.sample_name, Sample.state, Sample.has_report)
+                .where(Sample.order_id == order.id)
+                .order_by(Sample.date_created.desc().nullslast())
+            ).all()
+            if not is_banned(session, "sample", row.id)
+        ]
         sample_ids = [row.id for row in sample_rows]
         tests_map: dict[int, list[OrderSampleTestItem]] = {}
         pending_map: dict[int, int] = {}
@@ -106,6 +115,8 @@ def get_order_detail(
                     .order_by(Test.date_created.desc().nullslast())
                 )
                 for row in session.execute(tests_stmt):
+                    if is_banned(session, "test", row.id):
+                        continue
                     tests_map.setdefault(row.sample_id, []).append(
                         OrderSampleTestItem(
                             id=row.id,
@@ -152,8 +163,12 @@ def get_sample_detail(
     include_tests: bool = True,
     include_batches: bool = True,
 ) -> Optional[SampleDetailResponse]:
+    if is_banned(session, "sample", sample_id):
+        return None
     sample = session.get(Sample, sample_id)
     if not sample:
+        return None
+    if is_banned(session, "order", sample.order_id):
         return None
 
     order = session.get(Order, sample.order_id)
@@ -184,6 +199,7 @@ def get_sample_detail(
                 report_completed_date=test.report_completed_date,
             )
             for test in session.scalars(select(Test).where(Test.sample_id == sample.id))
+            if not is_banned(session, "test", test.id)
         ]
 
     batches_payload = None
@@ -191,10 +207,11 @@ def get_sample_detail(
         batches_payload = [
             SampleBatchItem(id=bid, display_name=name)
             for bid, name in session.execute(select(Batch.id, Batch.display_name).where(Batch.id.in_(sample.batch_ids)))
+            if not is_banned(session, "batch", bid)
         ]
 
     order_payload = None
-    if order:
+    if order and not is_banned(session, "customer", order.customer_account_id):
         customer_info = None
         if order.customer_account_id:
             customer = session.get(Customer, order.customer_account_id)
@@ -223,12 +240,20 @@ def get_test_detail(
     include_order: bool = True,
     include_batches: bool = True,
 ) -> Optional[TestDetailResponse]:
+    if is_banned(session, "test", test_id):
+        return None
     test = session.get(Test, test_id)
     if not test:
         return None
-
     sample = session.get(Sample, test.sample_id) if include_sample or include_order else None
+    if sample and is_banned(session, "sample", sample.id):
+        return None
     order = session.get(Order, sample.order_id) if sample and include_order else None
+    if order:
+        if is_banned(session, "order", order.id):
+            return None
+        if order.customer_account_id and is_banned(session, "customer", order.customer_account_id):
+            return None
 
     age_hours = _age_hours(test.date_created, test.report_completed_date)
     test_payload = {

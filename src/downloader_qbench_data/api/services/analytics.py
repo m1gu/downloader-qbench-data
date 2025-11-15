@@ -9,6 +9,7 @@ from sqlalchemy import Text, and_, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from downloader_qbench_data.storage import Customer, Order, Sample, Test
+from downloader_qbench_data.bans import is_banned
 from ..schemas.analytics import (
     CustomerAlertItem,
     CustomerAlertsResponse,
@@ -405,6 +406,7 @@ def get_slowest_orders(
     stmt = (
         select(
             Order.id.label("order_id"),
+            Order.customer_account_id.label("customer_id"),
             func.coalesce(Order.custom_formatted_id, func.concat("order-", Order.id)).label("order_reference"),
             Customer.name.label("customer_name"),
             Order.state.label("state"),
@@ -423,6 +425,8 @@ def get_slowest_orders(
     rows = session.execute(stmt)
     items: list[SlowOrderItem] = []
     for row in rows:
+        if is_banned(session, "order", int(row.order_id)) or is_banned(session, "customer", int(row.customer_id)):
+            continue
         completion_hours = float(row.completion_hours) if row.completion_hours is not None else None
         age_hours = float(row.age_hours) if row.age_hours is not None else 0.0
         items.append(
@@ -969,6 +973,10 @@ def get_priority_slowest_reported_orders(
     rows = session.execute(stmt)
     items: list[SlowReportedOrderItem] = []
     for row in rows:
+        if is_banned(session, "order", int(row.order_id)) or (
+            row.customer_name and hasattr(row, "customer_id") and is_banned(session, "customer", int(row.customer_id))
+        ):
+            continue
         open_hours_value = float(row.open_hours) if row.open_hours is not None else 0.0
         label = _format_open_time_label(open_hours_value)
         is_outlier = threshold is not None and open_hours_value >= threshold

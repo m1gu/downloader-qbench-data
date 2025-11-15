@@ -57,6 +57,23 @@ python scripts/manage_users.py create --username ops --password "Str0ngPass123"
 
 > La administracion se realiza exclusivamente via este script; el frontend no ofrece registro ni recuperacion.
 
+## Lista de entidades bloqueadas (banlist)
+
+Para ocultar entidades especificas en la API (customers, orders, samples, batches, tests) usa la tabla `banned_entities`. Las entidades bloqueadas no apareceran en los endpoints de detalle; si una orden es bloqueada, sus samples/tests tambien se omiten.
+
+Ejemplos con el CLI:
+
+```bash
+# Bloquear una orden
+python scripts/manage_banlist.py add --type order --id 12345 --reason "QA requested hide"
+
+# Bloquear un test
+python scripts/manage_banlist.py add --type test --id 55506
+
+# Desbloquear
+python scripts/manage_banlist.py remove --type order --id 12345
+```
+
 ### Autenticacion via API
 - Endpoint: `POST /api/auth/login` (body con `username` y `password`).
 - Respuesta: token `bearer` con vigencia configurable (`AUTH_TOKEN_TTL_HOURS`, por defecto 3 horas).
