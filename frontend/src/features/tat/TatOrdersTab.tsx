@@ -16,6 +16,7 @@ import '../overview/overview.css'
 const DEFAULT_LOOKBACK_DAYS = 7
 const DEFAULT_MIN_OPEN_HOURS = 72
 const DEFAULT_THRESHOLD_HOURS = 120
+const DEFAULT_TAT_RANGE = computeRange(DEFAULT_LOOKBACK_DAYS)
 
 function computeRange(days: number) {
   const end = new Date()
@@ -40,7 +41,7 @@ export function TatOrdersTab() {
     minOpenHours: DEFAULT_MIN_OPEN_HOURS,
     thresholdHours: DEFAULT_THRESHOLD_HOURS,
   })
-  const initialRange = React.useMemo(() => computeRange(DEFAULT_LOOKBACK_DAYS), [])
+  const initialRange = DEFAULT_TAT_RANGE
   const [filters, setFilters] = React.useState<TatFilters>({
     dateFrom: initialRange.from,
     dateTo: initialRange.to,

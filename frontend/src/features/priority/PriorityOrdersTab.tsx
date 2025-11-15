@@ -18,6 +18,7 @@ import '../overview/overview.css'
 const LOOKBACK_DAYS = 30
 const DEFAULT_MIN_DAYS = 4
 const DEFAULT_SLA_HOURS = 120
+const DEFAULT_PRIORITY_RANGE = computeRange()
 
 type FormState = Pick<PriorityFilters, 'minDaysOverdue' | 'slaHours'>
 
@@ -60,7 +61,7 @@ function computeRange() {
 }
 
 export function PriorityOrdersTab() {
-  const initialRange = React.useMemo(computeRange, [])
+  const initialRange = DEFAULT_PRIORITY_RANGE
   const [formState, setFormState] = React.useState<FormState>({
     minDaysOverdue: DEFAULT_MIN_DAYS,
     slaHours: DEFAULT_SLA_HOURS,
