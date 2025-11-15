@@ -168,6 +168,12 @@ def priority_orders_slowest(
         ge=0.0,
         description="Only include orders whose open time (created -> reported) meets this threshold",
     ),
+    lookback_days: Optional[int] = Query(
+        None,
+        ge=1,
+        le=90,
+        description="Number of days before date_to to include when date_from is omitted",
+    ),
     limit: int = Query(
         25,
         ge=1,
@@ -190,6 +196,7 @@ def priority_orders_slowest(
         customer_query=customer_query,
         min_open_hours=min_open_hours,
         highlight_threshold_hours=outlier_threshold_hours,
+        lookback_days=lookback_days,
         limit=limit,
     )
 

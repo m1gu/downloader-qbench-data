@@ -900,13 +900,15 @@ def get_priority_slowest_reported_orders(
     customer_query: Optional[str] = None,
     min_open_hours: float = 0.0,
     highlight_threshold_hours: Optional[float] = None,
+    lookback_days: Optional[int] = None,
     limit: int = 25,
 ) -> SlowReportedOrdersResponse:
     """Return reported orders with the longest open time within the requested window."""
 
     effective_limit = max(1, min(limit, 200))
     end_dt = date_to or datetime.now(timezone.utc)
-    start_dt = date_from or (end_dt - timedelta(days=30))
+    lookback = 30 if lookback_days is None else max(1, lookback_days)
+    start_dt = date_from or (end_dt - timedelta(days=lookback))
     min_open = max(0.0, float(min_open_hours))
     threshold = (
         max(0.0, float(highlight_threshold_hours))

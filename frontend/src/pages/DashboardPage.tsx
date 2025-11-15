@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Overview', to: '/dashboard' },
   { label: 'Operational Efficiency', to: '/dashboard/operational-efficiency' },
   { label: 'Priority Orders', to: '/dashboard/priority-orders' },
+  { label: 'TAT Orders', to: '/dashboard/tat-orders' },
 ]
 
 export function DashboardPage() {
@@ -36,6 +37,13 @@ export function DashboardPage() {
         eyebrow: 'Priority Orders',
         title: 'Priority Orders',
         subtitle: 'Monitor overdue orders, warning signals, and ready-to-report samples to stay ahead of SLAs.',
+      }
+    }
+    if (location.pathname.includes('tat-orders')) {
+      return {
+        eyebrow: 'TAT Orders',
+        title: 'TAT Orders',
+        subtitle: 'Analyze the slowest reported orders to understand turnaround bottlenecks.',
       }
     }
     return {
