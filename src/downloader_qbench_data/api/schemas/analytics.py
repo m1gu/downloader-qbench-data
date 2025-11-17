@@ -351,6 +351,15 @@ class ReadyToReportSampleItem(BaseModel):
     tests_total_count: int = Field(..., description="Total tests associated with the sample")
 
 
+class MetrcSampleStatusItem(BaseModel):
+    sample_id: int
+    sample_custom_id: Optional[str] = None
+    date_created: Optional[datetime] = None
+    metrc_id: str
+    metrc_status: Optional[str] = None
+    metrc_date: Optional[datetime] = None
+
+
 class OverdueOrdersResponse(BaseModel):
     interval: str
     minimum_days_overdue: int
@@ -364,3 +373,4 @@ class OverdueOrdersResponse(BaseModel):
     heatmap: list[OverdueHeatmapCell]
     state_breakdown: list[OverdueStateBreakdown]
     ready_to_report_samples: list[ReadyToReportSampleItem]
+    metrc_samples: list[MetrcSampleStatusItem]

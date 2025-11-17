@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from sqlalchemy import Text, and_, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
-from downloader_qbench_data.storage import Customer, Order, Sample, Test
+from downloader_qbench_data.storage import Customer, MetrcSampleStatus, Order, Sample, Test
 from downloader_qbench_data.bans import is_banned
 from ..schemas.analytics import (
     CustomerAlertItem,
@@ -30,6 +30,7 @@ from ..schemas.analytics import (
     OverdueStateBreakdown,
     OverdueTimelinePoint,
     ReadyToReportSampleItem,
+    MetrcSampleStatusItem,
     QualityKpiOrders,
     QualityKpiTests,
     QualityKpisResponse,
@@ -814,10 +815,12 @@ def get_overdue_orders(
         overdue_within_sla=within_sla,
     )
 
+    # Window for METRC samples: use provided date range when available; otherwise default lookback 30 days
     reference_dt = date_to if date_to else datetime.utcnow()
     if reference_dt.tzinfo is not None:
         reference_dt = reference_dt.astimezone(timezone.utc).replace(tzinfo=None)
-    window_start = reference_dt - timedelta(days=30)
+    window_start = date_from if date_from else reference_dt - timedelta(days=30)
+    status_window_start = window_start
 
     ready_state_case = case(
         (Test.state.in_(("COMPLETED", "NOT REPORTABLE")), 1),
@@ -880,6 +883,58 @@ def get_overdue_orders(
         for row in session.execute(ready_samples_stmt)
     ]
 
+    status_ranked = (
+        select(
+            MetrcSampleStatus.metrc_id.label("metrc_id"),
+            MetrcSampleStatus.metrc_status,
+            MetrcSampleStatus.metrc_date,
+            func.row_number()
+            .over(
+                partition_by=MetrcSampleStatus.metrc_id,
+                order_by=MetrcSampleStatus.metrc_date.desc(),
+            )
+            .label("rank"),
+        )
+        .where(
+            MetrcSampleStatus.metrc_date.isnot(None),
+            MetrcSampleStatus.metrc_date >= status_window_start,
+            MetrcSampleStatus.metrc_date <= reference_dt,
+        )
+        .subquery()
+    )
+
+    metrc_stmt = (
+        select(
+            Sample.id.label("sample_id"),
+            Sample.custom_formatted_id.label("sample_custom_id"),
+            Sample.date_created,
+            Sample.metrc_id,
+            status_ranked.c.metrc_status,
+            status_ranked.c.metrc_date,
+        )
+        .select_from(Sample)
+        .join(
+            status_ranked,
+            (status_ranked.c.metrc_id == Sample.metrc_id) & (status_ranked.c.rank == 1),
+        )
+        .where(
+            Sample.metrc_id.isnot(None),
+        )
+        .order_by(status_ranked.c.metrc_date.desc())
+    )
+
+    metrc_samples = [
+        MetrcSampleStatusItem(
+            sample_id=row.sample_id,
+            sample_custom_id=row.sample_custom_id,
+            date_created=row.date_created,
+            metrc_id=row.metrc_id,
+            metrc_status=row.metrc_status,
+            metrc_date=row.metrc_date,
+        )
+        for row in session.execute(metrc_stmt)
+    ]
+
     return OverdueOrdersResponse(
         interval=interval_value,
         minimum_days_overdue=minimum_days,
@@ -893,6 +948,7 @@ def get_overdue_orders(
         heatmap=heatmap,
         state_breakdown=breakdown,
         ready_to_report_samples=ready_samples,
+        metrc_samples=metrc_samples,
     )
 
 

@@ -60,6 +60,15 @@ export interface ReadySample {
   testsTotal: number
 }
 
+export interface MetrcSample {
+  id: number
+  customId: string
+  dateCreated: Date | null
+  metrcId: string
+  metrcStatus: string
+  metrcDate: Date | null
+}
+
 export interface TimelinePoint {
   date: Date
   label: string
@@ -88,6 +97,7 @@ export interface PriorityOrdersData {
   topOrders: OverdueOrder[]
   warningOrders: WarningOrder[]
   readySamples: ReadySample[]
+  metrcSamples: MetrcSample[]
   timeline: TimelinePoint[]
   heatmap: HeatmapData
   stateBreakdown: StateBreakdownItem[]

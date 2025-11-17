@@ -403,6 +403,19 @@
   color: var(--color-text-primary);
 }
 
+.priority__metrc-id {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  word-break: break-all;
+}
+
+.priority__metrc-sample-id {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
 .priority__order-row--breach {
   background: rgba(249, 115, 147, 0.08);
 }

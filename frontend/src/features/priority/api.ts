@@ -12,6 +12,7 @@ import type {
   StateBreakdownItem,
   TimelinePoint,
   WarningOrder,
+  MetrcSample,
 } from './types'
 
 interface OverdueOrdersResponse {
@@ -97,6 +98,14 @@ interface OverdueOrdersResponse {
     count: number
     ratio: number
   }>
+  metrc_samples: Array<{
+    sample_id: number
+    sample_custom_id: string | null
+    date_created: string | null
+    metrc_id: string
+    metrc_status: string | null
+    metrc_date: string | null
+  }>
 }
 
 const DEFAULT_WARNING_WINDOW = 5
@@ -179,6 +188,17 @@ function mapReadySamples(entries: OverdueOrdersResponse['ready_to_report_samples
   }))
 }
 
+function mapMetrcSamples(entries: OverdueOrdersResponse['metrc_samples']): MetrcSample[] {
+  return entries.map((item) => ({
+    id: item.sample_id,
+    customId: item.sample_custom_id || `Sample ${item.sample_id}`,
+    dateCreated: item.date_created ? parseISO(item.date_created) : null,
+    metrcId: item.metrc_id,
+    metrcStatus: item.metrc_status || '--',
+    metrcDate: item.metrc_date ? parseISO(item.metrc_date) : null,
+  }))
+}
+
 function mapTimeline(entries: OverdueOrdersResponse['timeline']): TimelinePoint[] {
   return entries.map((point) => {
     const date = parseISO(point.period_start)
@@ -256,6 +276,7 @@ export async function fetchPriorityOrders(filters: PriorityFilters): Promise<Pri
     topOrders: mapOrders(overdueResponse.top_orders, overdueResponse.sla_hours),
     warningOrders: mapWarnings(overdueResponse.warning_orders, overdueResponse.sla_hours),
     readySamples: mapReadySamples(overdueResponse.ready_to_report_samples),
+    metrcSamples: mapMetrcSamples(overdueResponse.metrc_samples),
     timeline: mapTimeline(overdueResponse.timeline),
     heatmap: mapHeatmap(overdueResponse.heatmap),
     stateBreakdown: mapStateBreakdown(overdueResponse.state_breakdown),

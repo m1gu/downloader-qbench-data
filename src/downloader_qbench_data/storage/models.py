@@ -114,6 +114,31 @@ class Sample(Base):
         onupdate=func.now(),
     )
 
+class MetrcSampleStatus(Base):
+    """Represents the latest known METRC status for a sample."""
+
+    __tablename__ = "metrc_sample_statuses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    metrc_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    metrc_status: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    metrc_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("metrc_id", "metrc_date", name="uq_metrc_status_by_metrc_id_date"),
+    )
+
 
 class Test(Base):
     """Represents a QBench test."""

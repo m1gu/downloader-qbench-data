@@ -406,6 +406,38 @@ export function PriorityOrdersTab() {
           </div>
         </div>
 
+        <div className="overview__card">
+          <CardHeader title="METRC samples (last 30 days)" subtitle="Samples with METRC status linked by metrc_id" />
+          <div className="overview__table-wrapper priority__table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Sample</th>
+                  <th>Created</th>
+                  <th>METRC ID</th>
+                  <th>Status</th>
+                  <th>Status date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data?.metrcSamples.length ? (
+                  data.metrcSamples.map((sample) => (
+                    <tr key={sample.id}>
+                      <td className="priority__metrc-sample-id">{sample.customId}</td>
+                      <td>{formatDateTimeLabel(sample.dateCreated)}</td>
+                      <td className="priority__metrc-id">{sample.metrcId}</td>
+                      <td>{sample.metrcStatus || '--'}</td>
+                      <td>{formatDateTimeLabel(sample.metrcDate)}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <EmptyTable loading={loading} colSpan={5} />
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <div className="overview__card overview__card--full">
           <CardHeader title="Overdue heatmap (customers × period)" subtitle="Weekly hotspots of overdue orders" />
           <div className="priority__heatmap" style={{ height: heatmapHeight }}>

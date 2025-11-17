@@ -45,6 +45,7 @@ from downloader_qbench_data.api.schemas import (
     OverdueOrdersResponse,
     OverdueStateBreakdown,
     OverdueTimelinePoint,
+    MetrcSampleStatusItem,
     ReadyToReportSampleItem,
     QualityKpiOrders,
     QualityKpiTests,
@@ -656,6 +657,24 @@ def test_orders_overdue_endpoint(monkeypatch):
                 tests_total_count=3,
             )
         ],
+        metrc_samples=[
+            MetrcSampleStatusItem(
+                sample_id=8001,
+                sample_custom_id="S-8001",
+                date_created=datetime(2025, 9, 28, 10, 0),
+                metrc_id="1A40D030000A5A1000000550",
+                metrc_status="RECEIVED",
+                metrc_date=datetime(2025, 9, 30, 9, 0),
+            ),
+            MetrcSampleStatusItem(
+                sample_id=8002,
+                sample_custom_id="S-8002",
+                date_created=datetime(2025, 9, 29, 11, 0),
+                metrc_id="1A40D030000A5A1000000551",
+                metrc_status="PROCESSING",
+                metrc_date=datetime(2025, 10, 1, 8, 30),
+            ),
+        ],
     )
     monkeypatch.setattr(
         "downloader_qbench_data.api.routers.analytics.get_overdue_orders",
@@ -670,6 +689,8 @@ def test_orders_overdue_endpoint(monkeypatch):
     assert body["top_orders"][0]["total_samples"] == 10
     assert body["top_orders"][0]["incomplete_samples"][0]["tests"][0]["states"][0] == "IN PROGRESS"
     assert body["ready_to_report_samples"][0]["sample_custom_id"] == "S-9001"
+    assert len(body["metrc_samples"]) == 2
+    assert body["metrc_samples"][0]["metrc_id"] == "1A40D030000A5A1000000550"
 
 
 def test_customers_alerts_endpoint(monkeypatch):
