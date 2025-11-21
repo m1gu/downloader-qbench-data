@@ -14,7 +14,6 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Overview', to: '/dashboard' },
-  { label: 'Operational Efficiency', to: '/dashboard/operational-efficiency' },
   { label: 'Priority Orders', to: '/dashboard/priority-orders' },
   { label: 'TAT Orders', to: '/dashboard/tat-orders' },
 ]
@@ -25,13 +24,6 @@ export function DashboardPage() {
   const [syncLabel, setSyncLabel] = useState<string | null>(null)
 
   const heroCopy = useMemo(() => {
-    if (location.pathname.includes('operational-efficiency')) {
-      return {
-        eyebrow: 'Operational Efficiency',
-        title: 'Operational Efficiency',
-        subtitle: 'Track throughput, cycle times, and funnel health to spot bottlenecks early.',
-      }
-    }
     if (location.pathname.includes('priority-orders')) {
       return {
         eyebrow: 'Priority Orders',

@@ -358,6 +358,7 @@ class MetrcSampleStatusItem(BaseModel):
     metrc_id: str
     metrc_status: Optional[str] = None
     metrc_date: Optional[datetime] = None
+    customer_name: Optional[str] = None
 
 
 class OverdueOrdersResponse(BaseModel):

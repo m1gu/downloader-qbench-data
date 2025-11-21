@@ -54,3 +54,20 @@ export function formatHoursToDuration(hours: number | null | undefined): string 
 
   return `${remainingHours} h`
 }
+
+export function formatElapsedDaysHours(from: Date | null, to: Date = new Date()): string {
+  if (!from) {
+    return '--'
+  }
+
+  const diffMs = Math.max(to.getTime() - from.getTime(), 0)
+  const totalHours = Math.floor(diffMs / (1000 * 60 * 60))
+  const days = Math.floor(totalHours / 24)
+  const hours = totalHours % 24
+
+  if (days > 0) {
+    return `${days}d${hours}h`
+  }
+
+  return `${hours}h`
+}

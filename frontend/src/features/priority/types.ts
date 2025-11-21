@@ -67,6 +67,8 @@ export interface MetrcSample {
   metrcId: string
   metrcStatus: string
   metrcDate: Date | null
+  customer: string
+  openTime: string
 }
 
 export interface TimelinePoint {

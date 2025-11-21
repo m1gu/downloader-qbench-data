@@ -911,8 +911,11 @@ def get_overdue_orders(
             Sample.metrc_id,
             status_ranked.c.metrc_status,
             status_ranked.c.metrc_date,
+            Customer.name.label("customer_name"),
         )
         .select_from(Sample)
+        .join(Order, Order.id == Sample.order_id)
+        .join(Customer, Customer.id == Order.customer_account_id, isouter=True)
         .join(
             status_ranked,
             (status_ranked.c.metrc_id == Sample.metrc_id) & (status_ranked.c.rank == 1),
@@ -931,6 +934,7 @@ def get_overdue_orders(
             metrc_id=row.metrc_id,
             metrc_status=row.metrc_status,
             metrc_date=row.metrc_date,
+            customer_name=row.customer_name,
         )
         for row in session.execute(metrc_stmt)
     ]
@@ -1856,3 +1860,5 @@ def get_customer_orders_summary(
         top_pending=top_pending_block,
     )
     return response
+
+

@@ -413,10 +413,10 @@ export function PriorityOrdersTab() {
               <thead>
                 <tr>
                   <th>Sample</th>
-                  <th>Created</th>
+                  <th>Customer</th>
                   <th>METRC ID</th>
                   <th>Status</th>
-                  <th>Status date</th>
+                  <th>Open time</th>
                 </tr>
               </thead>
               <tbody>
@@ -424,10 +424,10 @@ export function PriorityOrdersTab() {
                   data.metrcSamples.map((sample) => (
                     <tr key={sample.id}>
                       <td className="priority__metrc-sample-id">{sample.customId}</td>
-                      <td>{formatDateTimeLabel(sample.dateCreated)}</td>
+                      <td>{sample.customer}</td>
                       <td className="priority__metrc-id">{sample.metrcId}</td>
                       <td>{sample.metrcStatus || '--'}</td>
-                      <td>{formatDateTimeLabel(sample.metrcDate)}</td>
+                      <td>{sample.openTime}</td>
                     </tr>
                   ))
                 ) : (

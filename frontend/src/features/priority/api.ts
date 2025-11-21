@@ -1,6 +1,6 @@
 import { parseISO } from 'date-fns'
 import { apiFetch } from '../../lib/api'
-import { formatDateLabel } from '../../utils/format'
+import { formatDateLabel, formatElapsedDaysHours } from '../../utils/format'
 import type {
   HeatmapCustomer,
   HeatmapData,
@@ -105,6 +105,7 @@ interface OverdueOrdersResponse {
     metrc_id: string
     metrc_status: string | null
     metrc_date: string | null
+    customer_name: string | null
   }>
 }
 
@@ -189,14 +190,20 @@ function mapReadySamples(entries: OverdueOrdersResponse['ready_to_report_samples
 }
 
 function mapMetrcSamples(entries: OverdueOrdersResponse['metrc_samples']): MetrcSample[] {
-  return entries.map((item) => ({
-    id: item.sample_id,
-    customId: item.sample_custom_id || `Sample ${item.sample_id}`,
-    dateCreated: item.date_created ? parseISO(item.date_created) : null,
-    metrcId: item.metrc_id,
-    metrcStatus: item.metrc_status || '--',
-    metrcDate: item.metrc_date ? parseISO(item.metrc_date) : null,
-  }))
+  return entries.map((item) => {
+    const dateCreated = item.date_created ? parseISO(item.date_created) : null
+    const metrcDate = item.metrc_date ? parseISO(item.metrc_date) : null
+    return {
+      id: item.sample_id,
+      customId: item.sample_custom_id || `Sample ${item.sample_id}`,
+      dateCreated,
+      metrcId: item.metrc_id,
+      metrcStatus: item.metrc_status || '--',
+      metrcDate,
+      customer: item.customer_name || '--',
+      openTime: formatElapsedDaysHours(metrcDate),
+    }
+  })
 }
 
 function mapTimeline(entries: OverdueOrdersResponse['timeline']): TimelinePoint[] {
