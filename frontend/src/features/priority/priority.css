@@ -416,6 +416,34 @@
   font-weight: 600;
 }
 
+.priority__status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-secondary);
+}
+
+.priority__status-chip--default {
+  background: rgba(148, 163, 184, 0.25);
+  color: #e2e8f0;
+}
+
+.priority__status-chip--warning {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fb923c;
+}
+
+.priority__status-chip--success {
+  background: rgba(34, 197, 94, 0.18);
+  color: #86efac;
+}
+
 .priority__order-row--breach {
   background: rgba(249, 115, 147, 0.08);
 }

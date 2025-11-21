@@ -42,6 +42,11 @@ const STATE_VARIANT_MAP: Record<string, string> = {
   'APPROVED': 'priority__state--success',
 }
 
+const METRC_STATUS_CLASS_MAP: Record<string, string> = {
+  TESTINGINPROGRESS: 'priority__status-chip--warning',
+  RETESTPASSED: 'priority__status-chip--success',
+}
+
 function resolveStateClass(state: string | null | undefined): string {
   if (!state || state === '--') return 'priority__state--default'
   const key = state.toUpperCase()
@@ -49,6 +54,12 @@ function resolveStateClass(state: string | null | undefined): string {
   if (key.includes('REVIEW')) return 'priority__state--review'
   if (key.includes('HOLD')) return 'priority__state--warning'
   return 'priority__state--default'
+}
+
+function resolveMetrcStatusClass(status: string | null | undefined): string {
+  if (!status) return ''
+  const normalized = status.replace(/\s+/g, '').toUpperCase()
+  return METRC_STATUS_CLASS_MAP[normalized] ?? 'priority__status-chip--default'
 }
 
 function computeRange() {
@@ -426,7 +437,15 @@ export function PriorityOrdersTab() {
                       <td className="priority__metrc-sample-id">{sample.customId}</td>
                       <td>{sample.customer}</td>
                       <td className="priority__metrc-id">{sample.metrcId}</td>
-                      <td>{sample.metrcStatus || '--'}</td>
+                      <td>
+                        {sample.metrcStatus ? (
+                          <span className={`priority__status-chip ${resolveMetrcStatusClass(sample.metrcStatus)}`}>
+                            {sample.metrcStatus}
+                          </span>
+                        ) : (
+                          '--'
+                        )}
+                      </td>
                       <td>{sample.openTime}</td>
                     </tr>
                   ))
