@@ -98,12 +98,60 @@ def _normalise_match_strategy(strategy: Optional[str]) -> str:
 
 def _order_visibility_conditions() -> list:
     order_banned = exists().where(
-        (BannedEntity.entity_type == "order") & (BannedEntity.entity_id == Order.id)
+        (BannedEntity.entity_type == literal("order")) & (BannedEntity.entity_id == Order.id)
     )
     customer_banned = exists().where(
-        (BannedEntity.entity_type == "customer") & (BannedEntity.entity_id == Order.customer_account_id)
+        (BannedEntity.entity_type == literal("customer")) & (BannedEntity.entity_id == Order.customer_account_id)
     )
     return [~order_banned, ~customer_banned]
+
+
+def _sample_visibility_conditions() -> list:
+    customer_subq = (
+        select(Order.customer_account_id)
+        .where(Order.id == Sample.order_id)
+        .correlate(Sample)
+        .scalar_subquery()
+    )
+    sample_banned = exists().where(
+        (BannedEntity.entity_type == literal("sample")) & (BannedEntity.entity_id == Sample.id)
+    )
+    order_banned = exists().where(
+        (BannedEntity.entity_type == literal("order")) & (BannedEntity.entity_id == Sample.order_id)
+    )
+    customer_banned = exists().where(
+        (BannedEntity.entity_type == literal("customer")) & (BannedEntity.entity_id == customer_subq)
+    )
+    return [~sample_banned, ~order_banned, ~customer_banned]
+
+
+def _test_visibility_conditions() -> list:
+    sample_order_subq = (
+        select(Sample.order_id)
+        .where(Sample.id == Test.sample_id)
+        .correlate(Test)
+        .scalar_subquery()
+    )
+    customer_subq = (
+        select(Order.customer_account_id)
+        .join(Sample, Sample.order_id == Order.id)
+        .where(Sample.id == Test.sample_id)
+        .correlate(Test)
+        .scalar_subquery()
+    )
+    test_banned = exists().where(
+        (BannedEntity.entity_type == literal("test")) & (BannedEntity.entity_id == Test.id)
+    )
+    sample_banned = exists().where(
+        (BannedEntity.entity_type == literal("sample")) & (BannedEntity.entity_id == Test.sample_id)
+    )
+    order_banned = exists().where(
+        (BannedEntity.entity_type == literal("order")) & (BannedEntity.entity_id == sample_order_subq)
+    )
+    customer_banned = exists().where(
+        (BannedEntity.entity_type == literal("customer")) & (BannedEntity.entity_id == customer_subq)
+    )
+    return [~test_banned, ~sample_banned, ~order_banned, ~customer_banned]
 
 
 def get_orders_throughput(
@@ -542,7 +590,7 @@ def get_overdue_orders(
                 func.count(Sample.id).label("total_samples"),
             )
             .select_from(Sample)
-            .where(Sample.order_id.in_(order_ids))
+            .where(Sample.order_id.in_(order_ids), *_sample_visibility_conditions())
             .group_by(Sample.order_id)
         )
         for row in session.execute(total_samples_stmt):
@@ -556,7 +604,7 @@ def get_overdue_orders(
                 Sample.sample_name.label("sample_name"),
                 Sample.matrix_type.label("matrix_type"),
             )
-            .where(Sample.order_id.in_(order_ids))
+            .where(Sample.order_id.in_(order_ids), *_sample_visibility_conditions())
             .order_by(Sample.order_id, Sample.id)
         )
         sample_info_map: Dict[int, Any] = {}
@@ -572,7 +620,7 @@ def get_overdue_orders(
             )
             .select_from(Test)
             .join(Sample, Sample.id == Test.sample_id)
-            .where(Sample.order_id.in_(order_ids))
+            .where(Sample.order_id.in_(order_ids), *_test_visibility_conditions())
             .group_by(Sample.id, func.coalesce(Test.label_abbr, literal("--")))
         )
 
@@ -602,7 +650,7 @@ def get_overdue_orders(
             )
             .select_from(Test)
             .join(Sample, Sample.id == Test.sample_id)
-            .where(Sample.order_id.in_(order_ids))
+            .where(Sample.order_id.in_(order_ids), *_test_visibility_conditions())
             .order_by(Sample.order_id, Sample.id, Test.id)
         )
         sample_tests_map: Dict[tuple[int, int], Dict[str, Dict[str, Any]]] = {}
@@ -844,6 +892,7 @@ def get_overdue_orders(
             func.count(Test.id).label("total_tests"),
             func.sum(ready_state_case).label("ready_tests"),
         )
+        .where(*_test_visibility_conditions())
         .group_by(Test.sample_id)
         .having(func.sum(ready_state_case) == func.count(Test.id))
         .subquery()
@@ -855,6 +904,7 @@ def get_overdue_orders(
         Sample.date_created <= reference_dt,
         or_(Order.state.is_(None), Order.state.notin_(("COMPLETED", "REPORTED"))),
     ]
+    sample_conditions.extend(_sample_visibility_conditions())
 
     ready_samples_stmt = (
         select(
@@ -935,6 +985,7 @@ def get_overdue_orders(
         .where(
             Sample.metrc_id.isnot(None),
         )
+        .where(*_sample_visibility_conditions())
         .order_by(status_ranked.c.metrc_date.desc())
     )
 
@@ -1190,6 +1241,7 @@ def get_customer_alerts(
     order_conditions.append(Order.date_created.isnot(None))
     if customer_id is not None:
         order_conditions.append(Order.customer_account_id == customer_id)
+    order_conditions.extend(_order_visibility_conditions())
 
     order_tat_expr = func.extract("epoch", func.coalesce(Order.date_completed, func.now()) - Order.date_created) / 3600.0
     orders_stmt = (

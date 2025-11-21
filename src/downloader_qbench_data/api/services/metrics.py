@@ -7,10 +7,10 @@ from datetime import date, datetime, timedelta
 from statistics import mean, median
 from typing import DefaultDict, Iterable, Optional, List
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, exists, func, literal, select
 from sqlalchemy.orm import Session
 
-from downloader_qbench_data.storage import Customer, Order, Sample, Test, SyncCheckpoint
+from downloader_qbench_data.storage import BannedEntity, Customer, Order, Sample, Test, SyncCheckpoint
 from ..schemas.metrics import (
     DailyActivityPoint,
     DailyActivityResponse,
@@ -60,6 +60,59 @@ def _daterange_conditions(column, start: Optional[datetime], end: Optional[datet
     return conditions
 
 
+def _entity_banned_clause(entity: str, column) -> any:
+    return exists().where(
+        (BannedEntity.entity_type == literal(entity)) & (BannedEntity.entity_id == column)
+    )
+
+
+def _order_visibility_conditions() -> list:
+    return [
+        ~_entity_banned_clause("order", Order.id),
+        ~_entity_banned_clause("customer", Order.customer_account_id),
+    ]
+
+
+def _sample_visibility_conditions() -> list:
+    customer_subq = (
+        select(Order.customer_account_id)
+        .where(Order.id == Sample.order_id)
+        .correlate(Sample)
+        .scalar_subquery()
+    )
+    return [
+        ~_entity_banned_clause("sample", Sample.id),
+        ~_entity_banned_clause("order", Sample.order_id),
+        ~_entity_banned_clause("customer", customer_subq),
+    ]
+
+
+def _test_visibility_conditions() -> list:
+    sample_order_subq = (
+        select(Sample.order_id)
+        .where(Sample.id == Test.sample_id)
+        .correlate(Test)
+        .scalar_subquery()
+    )
+    customer_subq = (
+        select(Order.customer_account_id)
+        .join(Sample, Sample.order_id == Order.id)
+        .where(Sample.id == Test.sample_id)
+        .correlate(Test)
+        .scalar_subquery()
+    )
+    return [
+        ~_entity_banned_clause("test", Test.id),
+        ~_entity_banned_clause("sample", Test.sample_id),
+        ~_entity_banned_clause("order", sample_order_subq),
+        ~_entity_banned_clause("customer", customer_subq),
+    ]
+
+
+def _customer_visibility_conditions():
+    return [~_entity_banned_clause("customer", Customer.id)]
+
+
 def _apply_sample_filters(
     *,
     date_from: Optional[datetime],
@@ -77,6 +130,7 @@ def _apply_sample_filters(
         conditions.append(Sample.order_id == order_id)
     if state:
         conditions.append(Sample.state == state)
+    conditions.extend(_sample_visibility_conditions())
     return conditions, join_order
 
 
@@ -106,6 +160,7 @@ def _apply_test_filters(
         conditions.append(Test.state == state)
     if batch_id is not None:
         conditions.append(Test.batch_ids.contains([batch_id]))
+    conditions.extend(_test_visibility_conditions())
     return conditions, join_sample, join_order
 
 
@@ -126,6 +181,8 @@ def _count_with_filters(
         if join_order:
             stmt = stmt.join(Order, Sample.order_id == Order.id)
     stmt = stmt.where(*conditions)
+    if model is Order:
+        stmt = stmt.where(*_order_visibility_conditions())
     return session.execute(stmt).scalar_one()
 
 
@@ -146,7 +203,10 @@ def _aggregate_counts(
             stmt = stmt.join(Sample, Sample.id == Test.sample_id)
         if join_order:
             stmt = stmt.join(Order, Sample.order_id == Order.id)
-    stmt = stmt.where(*conditions).group_by(column).order_by(func.count().desc())
+    stmt = stmt.where(*conditions)
+    if model is Order:
+        stmt = stmt.where(*_order_visibility_conditions())
+    stmt = stmt.group_by(column).order_by(func.count().desc())
     return [(value or "unknown", count) for value, count in session.execute(stmt)]
 
 
@@ -512,6 +572,7 @@ def get_metrics_summary(
     customer_conditions = _daterange_conditions(Customer.date_created, date_from, date_to)
     if customer_id is not None:
         customer_conditions.append(Customer.id == customer_id)
+    customer_conditions.extend(_customer_visibility_conditions())
     total_customers = session.execute(
         select(func.count()).select_from(Customer).where(*customer_conditions)
     ).scalar_one()
@@ -684,6 +745,7 @@ def get_new_customers(
     limit: int = 10,
 ) -> NewCustomersResponse:
     conditions = _daterange_conditions(Customer.date_created, date_from, date_to)
+    conditions.extend(_customer_visibility_conditions())
     stmt = (
         select(Customer.id, Customer.name, Customer.date_created)
         .where(*conditions)
@@ -1036,21 +1098,30 @@ def get_tests_label_distribution(
 
 
 def get_metrics_filters(session: Session) -> MetricsFiltersResponse:
+    customers_stmt = (
+        select(Customer.id, Customer.name)
+        .where(*_customer_visibility_conditions())
+        .order_by(Customer.name)
+    )
     customers = [
         {"id": cid, "name": name}
-        for cid, name in session.execute(select(Customer.id, Customer.name).order_by(Customer.name))
+        for cid, name in session.execute(customers_stmt)
     ]
     sample_states = sorted(
         {
             state
-            for (state,) in session.execute(select(func.distinct(Sample.state)))
+            for (state,) in session.execute(
+                select(func.distinct(Sample.state)).where(*_sample_visibility_conditions())
+            )
             if state
         }
     )
     test_states = sorted(
         {
             state
-            for (state,) in session.execute(select(func.distinct(Test.state)))
+            for (state,) in session.execute(
+                select(func.distinct(Test.state)).where(*_test_visibility_conditions())
+            )
             if state
         }
     )
