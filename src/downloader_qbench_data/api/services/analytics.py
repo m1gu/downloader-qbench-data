@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from sqlalchemy import Text, and_, case, func, literal, or_, select
+from sqlalchemy import Text, and_, case, exists, func, literal, or_, select
 from sqlalchemy.orm import Session
 
-from downloader_qbench_data.storage import Customer, MetrcSampleStatus, Order, Sample, Test
+from downloader_qbench_data.storage import BannedEntity, Customer, MetrcSampleStatus, Order, Sample, Test
 from downloader_qbench_data.bans import is_banned
 from ..schemas.analytics import (
     CustomerAlertItem,
@@ -94,6 +94,16 @@ def _normalise_match_strategy(strategy: Optional[str]) -> str:
     if value not in _MATCH_STRATEGIES:
         raise ValueError(f"Unsupported match_strategy '{strategy}'. Allowed values: best, all")
     return value
+
+
+def _order_visibility_conditions() -> list:
+    order_banned = exists().where(
+        (BannedEntity.entity_type == "order") & (BannedEntity.entity_id == Order.id)
+    )
+    customer_banned = exists().where(
+        (BannedEntity.entity_type == "customer") & (BannedEntity.entity_id == Order.customer_account_id)
+    )
+    return [~order_banned, ~customer_banned]
 
 
 def get_orders_throughput(
@@ -394,6 +404,7 @@ def get_slowest_orders(
 
     conditions = _daterange_conditions(Order.date_created, date_from, date_to)
     conditions.append(Order.date_created.isnot(None))
+    conditions.extend(_order_visibility_conditions())
     if customer_id is not None:
         conditions.append(Order.customer_account_id == customer_id)
     if state:
@@ -468,6 +479,7 @@ def get_overdue_orders(
 
     base_conditions = _daterange_conditions(Order.date_created, date_from, date_to)
     base_conditions.append(Order.date_created.isnot(None))
+    base_conditions.extend(_order_visibility_conditions())
     active_conditions = list(base_conditions)
     active_conditions.append(or_(Order.state.is_(None), Order.state != "REPORTED"))
 
@@ -1596,6 +1608,7 @@ def _order_conditions(customer_id: int, date_from: Optional[datetime], date_to: 
         conditions.append(Order.date_created >= date_from)
     if date_to:
         conditions.append(Order.date_created <= date_to)
+    conditions.extend(_order_visibility_conditions())
     return conditions
 
 

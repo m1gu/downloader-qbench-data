@@ -1,7 +1,7 @@
 import { getEnv } from './env'
 
-//const DEFAULT_API_BASE_URL = 'http://localhost:8000'
-const DEFAULT_API_BASE_URL = 'https://615c98lc-8000.use.devtunnels.ms'
+const DEFAULT_API_BASE_URL = 'http://localhost:8000'
+//const DEFAULT_API_BASE_URL = 'https://615c98lc-8000.use.devtunnels.ms'
 
 function normalizeBaseUrl(url: string): string {
   const trimmed = url.replace(/\/+$/, '')
