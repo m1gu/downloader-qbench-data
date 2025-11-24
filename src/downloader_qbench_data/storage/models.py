@@ -103,6 +103,7 @@ class Sample(Base):
     date_created: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     start_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     matrix_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sample_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     state: Mapped[str | None] = mapped_column(String(64), nullable=True)
     test_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sample_weight: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)

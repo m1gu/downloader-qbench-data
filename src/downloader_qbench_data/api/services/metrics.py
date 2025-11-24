@@ -379,6 +379,7 @@ def get_tests_tat(
     order_id: Optional[int] = None,
     state: Optional[str] = None,
     group_by: Optional[str] = None,
+    sample_types: Optional[list[str]] = None,
 ) -> TestsTATResponse:
     conditions, join_sample, join_order = _apply_test_filters(
         date_from=date_created_from,
@@ -390,6 +391,9 @@ def get_tests_tat(
         date_column=Test.report_completed_date,
     )
     conditions.append(Test.report_completed_date.is_not(None))
+    if sample_types:
+        join_sample = True
+        conditions.append(Sample.sample_type.in_(sample_types))
 
     stmt = select(Test.date_created, Test.report_completed_date).select_from(Test)
     if join_sample:
@@ -602,6 +606,7 @@ def get_metrics_summary(
         customer_id=customer_id,
         order_id=order_id,
         state=state,
+        sample_types=["Adult Use", "AU Cliente R&D", "Medical MJ"],
     )
     average_tat = tat_summary.metrics.average_hours
 
